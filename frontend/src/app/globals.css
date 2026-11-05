@@ -1,0 +1,410 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --color-ink: var(--ink);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+:root {
+  color-scheme: light;
+  --background: #f8fafc;
+  --foreground: #172033;
+  --card: #ffffff;
+  --card-foreground: #172033;
+  --popover: #ffffff;
+  --popover-foreground: #172033;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #0f766e;
+  --secondary-foreground: #ffffff;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #f97362;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #2563eb;
+  --ink: #172033;
+  --radius: 0.75rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+}
+
+:root {
+  --auth-duration: 700ms;
+  --auth-ease: cubic-bezier(0.65, 0, 0.35, 1);
+  --auth-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/*
+ * Diagonal brand panel. Both states use the same 4-point polygon so the browser
+ * interpolates each vertex directly, giving one continuous slide in either direction.
+ * --e offsets the moving edge so the glow layer trails the image layer.
+ */
+.brand-clip {
+  --e: 0px;
+  transition: clip-path var(--auth-duration) var(--auth-ease);
+  will-change: clip-path;
+}
+.brand-clip[data-mode='login'] {
+  clip-path: polygon(0 0, calc(54% + var(--e)) 0, calc(42% + var(--e)) 100%, 0 100%);
+}
+.brand-clip[data-mode='signup'] {
+  clip-path: polygon(calc(46% - var(--e)) 0, 100% 0, 100% 100%, calc(58% - var(--e)) 100%);
+}
+
+/*
+ * The image is 150% of the card wide and pans with the panel, keeping the traveller
+ * centred in whichever side is visible (~22% in login, ~78% in signup).
+ */
+.brand-media {
+  transform: translate3d(-18.5%, 0, 0);
+  transition: transform var(--auth-duration) var(--auth-ease);
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.brand-media[data-mode='signup'] {
+  transform: translate3d(18.5%, 0, 0);
+}
+
+/* Inline collapsibles (password checklist, alerts, admin-only blocks) animate height via grid rows. */
+.collapsible,
+.admin-reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: none;
+  transition:
+    grid-template-rows 480ms var(--auth-ease),
+    opacity 320ms ease,
+    transform 480ms var(--auth-ease-out);
+}
+.collapsible[data-open='false'],
+.admin-reveal[data-open='false'] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
+}
+.admin-reveal {
+  animation: auth-reveal 520ms var(--auth-ease) backwards;
+}
+.admin-reveal .category-card {
+  animation: auth-rise 460ms var(--auth-ease-out) backwards;
+  animation-delay: calc(140ms + var(--i, 0) * 80ms);
+}
+
+.field-message {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transform: translate3d(0, -4px, 0);
+  transition:
+    grid-template-rows 280ms var(--auth-ease),
+    opacity 220ms ease,
+    transform 280ms var(--auth-ease-out);
+}
+.field-message[data-show='true'] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transform: none;
+}
+
+/* User <-> Admin copy swap: keyed remount slides in from the direction of travel. */
+.mode-swap {
+  display: inline-block;
+  animation: auth-swap 420ms var(--auth-ease-out) backwards;
+}
+
+.float-soft {
+  animation: auth-float 6s ease-in-out infinite;
+  animation-delay: var(--float-delay, 0s);
+}
+
+/* Page-load intro; the class is removed after the first Login/Sign Up switch. */
+.auth-intro .brand-intro,
+.brand-intro:where(.md\:hidden) {
+  animation: auth-media-in 1100ms var(--auth-ease-out) backwards;
+}
+.auth-intro .brand-edge {
+  animation: auth-fade 900ms ease backwards;
+}
+.auth-intro .stagger-group[data-active='true'] .stagger-item {
+  animation: auth-rise 640ms var(--auth-ease-out) backwards;
+  animation-delay: calc(220ms + var(--i, 0) * 60ms);
+}
+
+@keyframes auth-reveal {
+  from {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+@keyframes auth-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 14px, 0);
+  }
+}
+@keyframes auth-swap {
+  from {
+    opacity: 0;
+    transform: translate3d(calc(var(--dir, 1) * 16px), 0, 0);
+  }
+}
+@keyframes auth-float {
+  50% {
+    transform: translate3d(0, -6px, 0);
+  }
+}
+@keyframes auth-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes auth-media-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-12px, 0, 0) scale(1.03);
+  }
+}
+
+/*
+ * Form + brand copy. Outgoing content fades/slides out immediately and quickly;
+ * incoming content starts at ~55% of the panel move so the two overlap.
+ */
+.stagger-item {
+  transition:
+    transform 560ms var(--auth-ease-out),
+    opacity 480ms var(--auth-ease-out);
+  transition-delay: calc(380ms + var(--i, 0) * 35ms);
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+.stagger-group[data-active='false'] {
+  pointer-events: none;
+}
+.stagger-group[data-active='false'] .stagger-item {
+  opacity: 0;
+  transform: translate3d(calc(var(--dir, 1) * 28px), 0, 0);
+  transition:
+    transform 320ms var(--auth-ease),
+    opacity 240ms ease-out;
+  transition-delay: calc(var(--i, 0) * 12ms);
+}
+
+/* On mobile the inactive form overlays instead of reserving height, so the card fits the active form. */
+@media (max-width: 767px) {
+  .stagger-group[data-active='false'] {
+    position: absolute;
+    inset: 0 0 auto 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-clip,
+  .brand-media,
+  .collapsible,
+  .admin-reveal,
+  .field-message {
+    transition-duration: 0.01ms;
+  }
+  .admin-reveal,
+  .admin-reveal .category-card,
+  .mode-swap,
+  .float-soft,
+  .auth-intro .brand-intro,
+  .brand-intro,
+  .auth-intro .brand-edge,
+  .auth-intro .stagger-group[data-active='true'] .stagger-item {
+    animation: none;
+  }
+  .route-pin {
+    display: none;
+  }
+  .stagger-item,
+  .stagger-group[data-active='false'] .stagger-item {
+    transition: opacity 200ms ease;
+    transition-delay: 0s;
+    transform: none;
+  }
+}
+
+/* Authentication logo and recovery pages — uses the approved GHOOMI artwork. */
+.brand-logo { height: auto; width: min(220px, 100%); filter: drop-shadow(0 1px 5px rgb(0 0 0 / 0.09)); }
+.recovery-input { width: 100%; border: 1px solid var(--border); border-radius: 0.75rem; padding: 0.75rem 0.9rem; outline: none; background: white; }
+.recovery-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgb(37 99 235 / 0.10); }
+
+
+/* ========================================
+   GHOOMI AUTHENTICATION VIEWPORT FIX
+   ======================================== */
+
+/* Desktop and laptop screens */
+@media (min-width: 768px) {
+  .ghoomi-auth-viewport {
+    height: 100dvh;
+  }
+
+  .ghoomi-auth-card {
+    height: min(740px, calc(100dvh - 24px));
+    min-height: 0;
+  }
+
+  .ghoomi-auth-grid {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .ghoomi-auth-form {
+    height: 100%;
+    min-height: 0;
+    min-width: 0;
+    overscroll-behavior: contain;
+  }
+
+  .ghoomi-auth-form[data-active="false"] {
+    overflow: hidden;
+  }
+}
+
+/* Compact layout for shorter laptops */
+@media (min-width: 768px) and (max-height: 850px) {
+
+  .ghoomi-auth-form > div > div.mb-8 {
+    margin-bottom: 12px;
+  }
+
+  .ghoomi-auth-form > div > div.mb-5 {
+    margin-bottom: 10px;
+  }
+
+  .ghoomi-auth-form > div > div.mb-3 {
+    margin-bottom: 8px;
+  }
+
+  .ghoomi-auth-form h2.text-3xl {
+    font-size: 24px;
+    line-height: 30px;
+  }
+
+  .ghoomi-auth-form form {
+    gap: 8px;
+  }
+
+  .ghoomi-auth-form form .gap-3 {
+    gap: 8px;
+  }
+
+  .ghoomi-auth-form form .gap-5 {
+    gap: 10px;
+  }
+
+  .ghoomi-auth-form form .mt-3 {
+    margin-top: 6px;
+  }
+
+  .ghoomi-auth-form form .mt-1 {
+    margin-top: 4px;
+  }
+
+  .ghoomi-auth-form form .h-11 {
+    height: 40px;
+  }
+
+  .ghoomi-auth-form form .h-12 {
+    height: 44px;
+  }
+
+  .ghoomi-auth-form > div > p.mt-2 {
+    margin-top: 4px;
+  }
+}
+
+/* Mobile devices: allow natural scrolling */
+@media (max-width: 767px) {
+  .ghoomi-auth-viewport {
+    min-height: 100dvh;
+    height: auto;
+  }
+
+  .ghoomi-auth-card {
+    height: auto;
+  }
+
+  .ghoomi-auth-grid {
+    height: auto;
+  }
+
+  .ghoomi-auth-form {
+    height: auto;
+    overflow: visible;
+  }
+}
+/* Hide the browser's built-in password reveal icon.
+   Keep the custom GHOOMI show/hide button. */
+
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
+}
+/* GHOOMI recovery screen entrance */
+
+.recovery-enter {
+  animation: auth-rise 480ms
+    var(--auth-ease-out, ease-out) 220ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recovery-enter {
+    animation: none;
+  }
+}
+/* GHOOMI: Prevent inactive authentication forms
+   from overlapping the active page */
+
+@media (min-width: 768px) {
+  .ghoomi-auth-grid > .stagger-group[data-active="false"] {
+    visibility: hidden;
+    transition: visibility 0s linear 320ms;
+  }
+
+  .ghoomi-auth-grid > .stagger-group[data-active="true"] {
+    visibility: visible;
+  }
+}
