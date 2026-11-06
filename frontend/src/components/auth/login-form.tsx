@@ -5,15 +5,13 @@ import { useState, type FormEvent } from 'react'
 import { AuthField } from './auth-field'
 import { Checkbox, Divider, EmailButton, FormAlert, FormShell, FormStatus, GoogleButton, PrimaryButton, staggerStyle } from './form-parts'
 import { useFormState } from './use-form-state'
-import { EMAIL_PATTERN } from './validation'
+import { emailError } from './validation'
 import { authApi } from '@/services/auth-api'
-const FIELDS = ['identifier', 'password'] as const
+const FIELDS = ['email', 'password'] as const
 type Values = Record<(typeof FIELDS)[number], string>
 function validate(values: Values) {
   const errors: Partial<Values> = {}
-  const identifier = values.identifier.trim()
-  if (!identifier) errors.identifier = 'Name or email is required'
-  else if (identifier.includes('@') && !EMAIL_PATTERN.test(identifier)) errors.identifier = 'Please enter a valid email'
+  errors.email = emailError(values.email)
   if (!values.password) errors.password = 'Password is required'
   return errors
 }
@@ -24,7 +22,7 @@ export function LoginForm({ active, onSwitch, className }: { active: boolean; on
   const [pending, setPending] = useState(false)
   const form = useFormState(FIELDS, validate, () => { setError(null); setStatus(null) })
   const s = (i: number) => staggerStyle(i, 1)
-  const identifier = form.field('identifier')
+  const email = form.field('email')
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -37,7 +35,7 @@ export function LoginForm({ active, onSwitch, className }: { active: boolean; on
     setPending(true)
     setError(null)
     try {
-      await authApi.login({ identifier: form.values.identifier.trim(), password: form.values.password, rememberMe: Boolean(element.querySelector<HTMLInputElement>('[name="remember"]')?.checked) })
+      await authApi.login({ email: form.values.email.trim().toLowerCase(), password: form.values.password, rememberMe: Boolean(element.querySelector<HTMLInputElement>('[name="remember"]')?.checked) })
       setStatus('Sign in confirmed by the authentication service. Your dashboard will be available after it is built.')
     } catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in.') }
     finally { setPending(false) }
@@ -54,7 +52,7 @@ export function LoginForm({ active, onSwitch, className }: { active: boolean; on
         <p className="stagger-item text-sm text-muted-foreground" style={s(1)}>Continue your journey with Ghoomi.</p>
       </div>
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
-        <AuthField className="stagger-item" style={s(2)} {...identifier} invalid={Boolean(error)} label="Name or Email" icon={AtSign} autoComplete="username" />
+        <AuthField className="stagger-item" style={s(2)} {...email} invalid={Boolean(error)} type="email" label="Email Address" icon={AtSign} autoComplete="email" required />
         <div className="stagger-item flex flex-col" style={s(3)}>
           <AuthField {...form.field('password')} invalid={Boolean(error)} type="password" label="Password" icon={Lock} autoComplete="current-password" />
           <div className="mt-3 flex items-center justify-between">
@@ -67,7 +65,7 @@ export function LoginForm({ active, onSwitch, className }: { active: boolean; on
           <div className="stagger-item" style={s(4)}><PrimaryButton loading={pending}>Login</PrimaryButton></div>
           <div className="stagger-item" style={s(5)}><Divider /></div>
           <div className="stagger-item" style={s(6)}><GoogleButton disabled={pending} onClick={handleGoogle} /></div>
-          <div className="stagger-item" style={s(7)}><EmailButton onClick={() => document.querySelector<HTMLInputElement>('input[name="identifier"]')?.focus()} /></div>
+          <div className="stagger-item" style={s(7)}><EmailButton onClick={() => document.querySelector<HTMLInputElement>('input[name="email"]')?.focus()} /></div>
         </div>
         <FormStatus message={status} />
       </form>

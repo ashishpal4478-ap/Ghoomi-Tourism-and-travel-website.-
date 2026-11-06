@@ -1,7 +1,7 @@
 
 'use client'
 
-import { Building2, Lock, MapPin, Phone, ShieldCheck, User } from 'lucide-react'
+import { Building2, Lock, Mail, MapPin, Phone, ShieldCheck, User } from 'lucide-react'
 import { useId, useState, type CSSProperties, type FormEvent } from 'react'
 import { AuthField } from './auth-field'
 import { CATEGORIES, CategoryPicker, type CategoryId } from './category-picker'
@@ -19,10 +19,10 @@ import {
 import { PasswordStrength } from './password-strength'
 import { RoleSelector, type Role } from './role-selector'
 import { useFormState } from './use-form-state'
-import { passwordError } from './validation'
+import { emailError, passwordError } from './validation'
 import { authApi } from '@/services/auth-api'
 
-const FIELDS = ['name', 'phone', 'password', 'confirm'] as const
+const FIELDS = ['name', 'email', 'phone', 'password', 'confirm'] as const
 type Values = Record<(typeof FIELDS)[number], string>
 type AdminStep = 'category' | 'account' | 'business'
 type SlideDirection = 'forward' | 'back'
@@ -31,6 +31,8 @@ function validate(values: Values) {
   const errors: Partial<Values> = {}
 
   if (!values.name.trim()) errors.name = 'Name is required'
+
+  errors.email = emailError(values.email)
 
   const phone = values.phone.trim()
   if (!phone) errors.phone = 'Phone number is required'
@@ -177,6 +179,7 @@ export function SignupForm({
       // It does not grant privileged administrator permissions.
       await authApi.register({
         name: form.values.name.trim(),
+        email: form.values.email.trim().toLowerCase(),
         phone: `+91${form.values.phone.trim()}`,
         password: form.values.password,
         accountType: isAdmin ? 'partner_application' : 'traveller',
@@ -299,7 +302,17 @@ export function SignupForm({
               <AuthField
                 className="stagger-item"
                 style={s(4)}
-                {...form.field('phone')}
+                {...form.field('email')}
+  type="email"
+  label="Email Address"
+  icon={Mail}
+  autoComplete="email"
+  required
+/>
+<AuthField
+  className="stagger-item"
+  style={s(5)}
+  {...form.field('phone')}
                 type="tel"
                 label="Phone Number"
                 icon={Phone}

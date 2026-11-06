@@ -6,6 +6,7 @@
 export type ApiSuccess = { success: true; message?: string }
 export type RegistrationInput = {
   name: string
+  email: string
   phone: string
   password: string
   accountType: 'traveller' | 'partner_application'
@@ -18,7 +19,7 @@ export type RegistrationInput = {
     city: string
   }
 }
-export type LoginInput = { identifier: string; password: string; rememberMe: boolean }
+export type LoginInput = { email: string; password: string; rememberMe: boolean }
 
 const apiBase = process.env.NEXT_PUBLIC_AUTH_API_BASE_URL?.trim().replace(/\/$/, '')
 export class AuthApiError extends Error {}

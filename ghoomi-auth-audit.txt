@@ -1,0 +1,1447 @@
+
+========== backend\pom.xml ==========
+
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.4.3</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>com.ghoomi</groupId>
+    <artifactId>ghoomi-backend</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <name>ghoomi-backend</name>
+    <description>Ghoomi Tourism and Travel Platform - Backend Service</description>
+
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
+    <dependencies>
+        <!-- Spring Boot Web -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+
+        <!-- Spring Data JPA -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+
+        <!-- Spring Security -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- Bean Validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+
+        <!-- MySQL Connector -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- Flyway Database Migrations -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-mysql</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                    <parameters>true</parameters>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
+
+
+
+========== backend\src\main\java\com\ghoomi\common\config\SecurityConfig.java ==========
+
+package com.ghoomi.common.config;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
+import java.util.Arrays;
+import java.util.List;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Value("${app.cors.allowed-origins:http://localhost:3000}")
+    private String allowedOrigins;
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+            .cors(Customizer.withDefaults())
+            .csrf(AbstractHttpConfigurer::disable)
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .authorizeHttpRequests(auth -> auth
+                .requestMatchers("/api/v1/health").permitAll()
+                .requestMatchers("/api/v1/auth/**").permitAll()
+                .anyRequest().authenticated()
+            );
+
+        return http.build();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        CorsConfiguration configuration = new CorsConfiguration();
+        configuration.setAllowedOrigins(Arrays.stream(allowedOrigins.split(",")).map(String::trim).toList());
+        configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        configuration.setAllowedHeaders(List.of("Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin", "Access-Control-Request-Method", "Access-Control-Request-Headers"));
+        configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
+
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(12);
+    }
+}
+
+
+
+========== backend\src\main\java\com\ghoomi\common\response\ApiResponse.java ==========
+
+package com.ghoomi.common.response;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+import java.time.Instant;
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class ApiResponse<T> {
+
+    private boolean success;
+    private String message;
+    private T data;
+    private String timestamp;
+
+    public ApiResponse() {
+        this.timestamp = Instant.now().toString();
+    }
+
+    public ApiResponse(boolean success, String message, T data) {
+        this.success = success;
+        this.message = message;
+        this.data = data;
+        this.timestamp = Instant.now().toString();
+    }
+
+    public static <T> ApiResponse<T> ok(T data) {
+        return new ApiResponse<>(true, "Operation successful", data);
+    }
+
+    public static <T> ApiResponse<T> ok(String message, T data) {
+        return new ApiResponse<>(true, message, data);
+    }
+
+    public static <T> ApiResponse<T> success(String message) {
+        return new ApiResponse<>(true, message, null);
+    }
+
+    public static <T> ApiResponse<T> error(String message) {
+        return new ApiResponse<>(false, message, null);
+    }
+
+    public boolean isSuccess() {
+        return success;
+    }
+
+    public void setSuccess(boolean success) {
+        this.success = success;
+    }
+
+    public String getMessage() {
+        return message;
+    }
+
+    public void setMessage(String message) {
+        this.message = message;
+    }
+
+    public T getData() {
+        return data;
+    }
+
+    public void setData(T data) {
+        this.data = data;
+    }
+
+    public String getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(String timestamp) {
+        this.timestamp = timestamp;
+    }
+}
+
+
+
+========== backend\src\main\java\com\ghoomi\common\exception\GlobalExceptionHandler.java ==========
+
+package com.ghoomi.common.exception;
+
+import com.ghoomi.common.response.ApiResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.validation.FieldError;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.stream.Collectors;
+
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException ex) {
+        String errorMessage = ex.getBindingResult().getFieldErrors().stream()
+                .map(FieldError::getDefaultMessage)
+                .collect(Collectors.joining("; "));
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(errorMessage.isEmpty() ? "Invalid request payload" : errorMessage));
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    public ResponseEntity<ApiResponse<Void>> handleIllegalArgumentException(IllegalArgumentException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                .body(ApiResponse.error(ex.getMessage()));
+    }
+
+    @ExceptionHandler(Exception.class)
+    public ResponseEntity<ApiResponse<Void>> handleGenericException(Exception ex) {
+        log.error("Unhandled application exception", ex);
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(ApiResponse.error("An unexpected internal error occurred. Please try again later."));
+    }
+}
+
+
+
+========== backend\src\main\java\com\ghoomi\modules\user\User.java ==========
+
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+@Entity
+@Table(name = "users")
+public class User {
+
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    @Column(name = "email", length = 254, nullable = false, unique = true)
+    private String email;
+
+    @Column(name = "password_hash", length = 255, nullable = false)
+    private String passwordHash;
+
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 191)
+    private UserRole role = UserRole.USER;
+
+    @Column(name = "is_active", nullable = false)
+    private boolean active = true;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    // Compatibility fields: these are not columns in the users table.
+    @Transient
+    private String phoneE164;
+
+    @Transient
+    private String fullName;
+
+    @Transient
+    private boolean phoneVerified;
+
+    @Transient
+    private String accountType;
+
+    @Transient
+    private LocalDateTime lastLoginAt;
+
+    protected User() {}
+
+    public User(String email, String phoneE164, String passwordHash,
+                String fullName, UserRole role,
+                AccountStatus accountStatus, String accountType) {
+        this.email = email;
+        this.phoneE164 = phoneE164;
+        this.passwordHash = passwordHash;
+        this.fullName = fullName;
+        this.role = role != null ? role : UserRole.USER;
+        this.accountType = accountType;
+
+        if (accountStatus != null) {
+            this.active = accountStatus == AccountStatus.ACTIVE
+                    || accountStatus == AccountStatus.PENDING_VERIFICATION;
+        }
+    }
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+        if (createdAt == null) createdAt = now;
+        if (updatedAt == null) updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    public String getId() { return id; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public UserRole getRole() { return role; }
+    public void setRole(UserRole role) { this.role = role; }
+
+    public boolean isActive() { return active; }
+    public void setActive(boolean active) { this.active = active; }
+
+    public boolean isEmailVerified() { return emailVerifiedAt != null; }
+
+    public void setEmailVerified(boolean verified) {
+        this.emailVerifiedAt = verified
+                ? LocalDateTime.now(ZoneOffset.UTC) : null;
+    }
+
+    public LocalDateTime getEmailVerifiedAt() { return emailVerifiedAt; }
+    public void setEmailVerifiedAt(LocalDateTime value) {
+        this.emailVerifiedAt = value;
+    }
+
+    public String getPhoneE164() { return phoneE164; }
+    public void setPhoneE164(String phoneE164) { this.phoneE164 = phoneE164; }
+
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
+
+    public boolean isPhoneVerified() { return phoneVerified; }
+    public void setPhoneVerified(boolean phoneVerified) {
+        this.phoneVerified = phoneVerified;
+    }
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
+
+    public LocalDateTime getLastLoginAt() { return lastLoginAt; }
+    public void setLastLoginAt(LocalDateTime lastLoginAt) {
+        this.lastLoginAt = lastLoginAt;
+    }
+
+    public AccountStatus getAccountStatus() {
+        return active ? AccountStatus.ACTIVE : AccountStatus.DEACTIVATED;
+    }
+
+    public void setAccountStatus(AccountStatus status) {
+        this.active = status == AccountStatus.ACTIVE
+                || status == AccountStatus.PENDING_VERIFICATION;
+    }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+========== backend\src\main\java\com\ghoomi\modules\user\UserProfile.java ==========
+
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+
+@Entity
+@Table(name = "user_profiles")
+public class UserProfile {
+
+    @Id
+    @Column(name = "user_id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    @OneToOne(fetch = FetchType.LAZY)
+    @MapsId
+    @JoinColumn(name = "user_id", columnDefinition = "CHAR(36)", nullable = false)
+    private User user;
+
+    @Column(name = "display_name", length = 150, nullable = false)
+    private String displayName;
+
+    @Column(name = "phone_e164", length = 20)
+    private String phoneE164;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "travel_preferences", columnDefinition = "json", nullable = false)
+    private String travelPreferences = "{}";
+
+    @Column(name = "avatar_object_key", columnDefinition = "TEXT")
+    private String avatarObjectKey;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    protected UserProfile() {}
+
+    public UserProfile(User user) {
+        this.user = user;
+        if (user != null) {
+            this.displayName = user.getFullName();
+            this.phoneE164 = user.getPhoneE164();
+        }
+    }
+
+    @PrePersist
+    @PreUpdate
+    protected void updateTimestamp() {
+        updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+        if (travelPreferences == null) {
+            travelPreferences = "{}";
+        }
+    }
+
+    public String getId() {
+        return user != null ? user.getId() : null;
+    }
+
+    public User getUser() { return user; }
+    public void setUser(User user) {
+        this.user = user;
+        this.id = user != null ? user.getId() : null;
+    }
+
+    public String getDisplayName() { return displayName; }
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public String getPhoneE164() { return phoneE164; }
+    public void setPhoneE164(String phoneE164) {
+        this.phoneE164 = phoneE164;
+    }
+
+    public String getTravelPreferences() { return travelPreferences; }
+    public void setTravelPreferences(String travelPreferences) {
+        this.travelPreferences = travelPreferences;
+    }
+
+    public String getAvatarObjectKey() { return avatarObjectKey; }
+    public void setAvatarObjectKey(String avatarObjectKey) {
+        this.avatarObjectKey = avatarObjectKey;
+    }
+
+    // Compatibility aliases for older profile code.
+    public String getAvatarUrl() { return avatarObjectKey; }
+    public void setAvatarUrl(String avatarUrl) {
+        this.avatarObjectKey = avatarUrl;
+    }
+
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+========== backend\src\main\java\com\ghoomi\modules\user\UserRepository.java ==========
+
+package com.ghoomi.modules.user;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+@Repository
+public interface UserRepository extends JpaRepository<User, String> {
+
+    Optional<User> findByEmail(String email);
+
+    boolean existsByEmail(String email);
+}
+
+========== backend\src\main\java\com\ghoomi\modules\user\UserProfileRepository.java ==========
+
+package com.ghoomi.modules.user;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+
+/**
+ * Spring Data JPA repository for the {@link UserProfile} entity.
+ */
+@Repository
+public interface UserProfileRepository extends JpaRepository<UserProfile, String> {
+
+    /**
+     * Find the profile linked to a specific user.
+     */
+    Optional<UserProfile> findByUserId(String userId);
+}
+
+
+
+========== backend\src\main\java\com\ghoomi\modules\auth\OtpRecord.java ==========
+
+package com.ghoomi.modules.auth;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/**
+ * JPA entity mapping the {@code otp_records} table (added in V2 migration).
+ *
+ * <p>
+ * OTP values are stored as a BCrypt hash â€” never plaintext.
+ * A record is consumed (single-use) on successful verification.
+ */
+@Entity
+@Table(name = "otp_records")
+public class OtpRecord {
+
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    /** The email address this OTP was issued to. */
+    @Column(name = "email", length = 254, nullable = false)
+    private String email;
+
+    /** BCrypt hash of the 6-digit OTP â€” never store plaintext. */
+    @Column(name = "otp_hash", length = 72, nullable = false)
+    private String otpHash;
+
+    /**
+     * Purpose discriminator â€” currently only PASSWORD_RESET is used in Partition 1.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", length = 30, nullable = false)
+    private OtpPurpose purpose;
+
+    /** UTC timestamp after which this OTP must be rejected. */
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
+    /** Whether this record has already been used. */
+    @Column(name = "used", nullable = false)
+    private boolean used = false;
+
+    /** Number of verification attempts made against this OTP. */
+    @Column(name = "attempts", nullable = false)
+    private byte attempts = 0;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+        }
+        createdAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
+    // â”€â”€ Constructors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    protected OtpRecord() {
+    }
+
+    public OtpRecord(String email, String otpHash, OtpPurpose purpose, LocalDateTime expiresAt) {
+        this.email = email;
+        this.otpHash = otpHash;
+        this.purpose = purpose;
+        this.expiresAt = expiresAt;
+    }
+
+    // â”€â”€ Getters / Setters â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    public String getId() {
+        return id;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getOtpHash() {
+        return otpHash;
+    }
+
+    public OtpPurpose getPurpose() {
+        return purpose;
+    }
+
+    public LocalDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public boolean isUsed() {
+        return used;
+    }
+
+    public void setUsed(boolean used) {
+        this.used = used;
+    }
+
+    public int getAttempts() {
+        return attempts;
+    }
+
+    public void incrementAttempts() {
+        this.attempts++;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+}
+
+
+========== backend\src\main\java\com\ghoomi\modules\auth\OtpRecordRepository.java ==========
+
+package com.ghoomi.modules.auth;
+
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDateTime;
+import java.util.Optional;
+
+/**
+ * Spring Data JPA repository for {@link OtpRecord}.
+ */
+@Repository
+public interface OtpRecordRepository extends JpaRepository<OtpRecord, String> {
+
+    /**
+     * Find the latest unused, unexpired OTP for a given email and purpose.
+     * Ordered newest-first so that any re-issued OTP supersedes the previous one.
+     */
+    Optional<OtpRecord> findTopByEmailAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+            String email, OtpPurpose purpose, LocalDateTime now);
+
+    /**
+     * Delete all OTP records for an email+purpose pair â€” called after a
+     * successful reset to leave no dangling records.
+     */
+    @Modifying
+    @Transactional
+    @Query("DELETE FROM OtpRecord o WHERE o.email = :email AND o.purpose = :purpose")
+    void deleteAllByEmailAndPurpose(String email, OtpPurpose purpose);
+}
+
+
+
+========== backend\src\main\resources\application.yml ==========
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-message: always
+    include-binding-errors: always
+
+spring:
+  application:
+    name: ghoomi-backend
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:local}
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:ghoomi_dev}?useSSL=false&allowPublicKeyRetrieval=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&characterEncoding=UTF-8}
+    username: ${SPRING_DATASOURCE_USERNAME:${DB_USERNAME:root}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${DB_PASSWORD:}}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
+      max-lifetime: 1800000
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        jdbc:
+          time_zone: UTC
+        format_sql: true
+
+  flyway:
+    enabled: ${SPRING_FLYWAY_ENABLED:true}
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    validate-on-migrate: true
+    baseline-version: 0
+
+  jackson:
+    time-zone: UTC
+    date-format: yyyy-MM-dd'T'HH:mm:ss.SSSXXX
+
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
+
+
+
+========== backend\src\main\resources\application-local.yml ==========
+
+# Local Development Profile Configuration
+logging:
+  level:
+    root: INFO
+    com.ghoomi: DEBUG
+    org.springframework.security: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+    org.flywaydb: INFO
+
+spring:
+  jpa:
+    show-sql: true
+
+app:
+  cors:
+    allowed-origins: http://localhost:3000
+
+
+
+========== frontend\src\services\auth-api.ts ==========
+
+/**
+ * Frontend-only integration contract. These are expected backend routes, NOT implemented APIs.
+ * The backend must provide HTTP-only secure session cookies, CSRF protection, server-side
+ * role validation and OTP issuing/verification. Never store a token in localStorage.
+ */
+export type ApiSuccess = { success: true; message?: string }
+export type RegistrationInput = {
+  name: string
+  email: string
+  phone: string
+  password: string
+  accountType: 'traveller' | 'partner_application'
+
+  businessCategories?: string[]
+
+  businessDetails?: {
+    businessName: string
+    businessType: string
+    city: string
+  }
+}
+export type LoginInput = { email: string; password: string; rememberMe: boolean }
+
+const apiBase = process.env.NEXT_PUBLIC_AUTH_API_BASE_URL?.trim().replace(/\/$/, '')
+export class AuthApiError extends Error {}
+
+async function send<T extends ApiSuccess>(path: string, payload: object): Promise<T> {
+  if (!apiBase) throw new AuthApiError('Authentication is not configured yet. Connect a real backend first.')
+  let response: Response
+  try {
+    response = await fetch(`${apiBase}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new AuthApiError('Authentication service cannot be reached. Please try again later.')
+  }
+  const result: unknown = await response.json().catch(() => null)
+  const body = result && typeof result === 'object' ? result as Record<string, unknown> : {}
+  if (!response.ok || body.success !== true) {
+    const message = typeof body.message === 'string' && body.message.length < 250 ? body.message : 'The request could not be completed.'
+    throw new AuthApiError(message)
+  }
+  return body as T
+}
+
+export const authApi = {
+  login: (input: LoginInput) => send<ApiSuccess>('/auth/login', input),
+  register: (input: RegistrationInput) => send<ApiSuccess>('/auth/register', input),
+  forgotPassword: (email: string) => send<ApiSuccess & { retryAfterSeconds?: number }>('/auth/password/forgot', { email }),
+  verifyOtp: (email: string, otp: string) => send<ApiSuccess>('/auth/password/verify-otp', { email, otp }),
+  /** Requires a short-lived server-issued reset grant in an HttpOnly cookie. */
+  resetPassword: (newPassword: string) => send<ApiSuccess>('/auth/password/reset', { newPassword }),
+  async startGoogleAuth(): Promise<void> {
+    const response = await send<ApiSuccess & { authorizationUrl?: string }>('/auth/oauth/google/start', { intent: 'sign_in' })
+    if (!response.authorizationUrl) throw new AuthApiError('Google authentication is not configured.')
+    let url: URL
+    try { url = new URL(response.authorizationUrl) }
+    catch { throw new AuthApiError('Authentication provider returned an invalid URL.') }
+    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && url.hostname === 'localhost')) {
+      throw new AuthApiError('Authentication provider returned an unsafe URL.')
+    }
+    window.location.assign(url.toString())
+  },
+}
+
+
+========== frontend\src\components\auth\login-form.tsx ==========
+
+'use client'
+import { AtSign, Lock } from 'lucide-react'
+import Link from 'next/link'
+import { useState, type FormEvent } from 'react'
+import { AuthField } from './auth-field'
+import { Checkbox, Divider, EmailButton, FormAlert, FormShell, FormStatus, GoogleButton, PrimaryButton, staggerStyle } from './form-parts'
+import { useFormState } from './use-form-state'
+import { emailError } from './validation'
+import { authApi } from '@/services/auth-api'
+const FIELDS = ['email', 'password'] as const
+type Values = Record<(typeof FIELDS)[number], string>
+function validate(values: Values) {
+  const errors: Partial<Values> = {}
+  errors.email = emailError(values.email)
+  if (!values.password) errors.password = 'Password is required'
+  return errors
+}
+
+export function LoginForm({ active, onSwitch, className }: { active: boolean; onSwitch: () => void; className?: string }) {
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+  const form = useFormState(FIELDS, validate, () => { setError(null); setStatus(null) })
+  const s = (i: number) => staggerStyle(i, 1)
+  const email = form.field('email')
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const element = event.currentTarget
+    setStatus(null)
+    if (!form.submit()) {
+      requestAnimationFrame(() => element.querySelector<HTMLInputElement>('[aria-invalid="true"]')?.focus())
+      return
+    }
+    setPending(true)
+    setError(null)
+    try {
+      await authApi.login({ email: form.values.email.trim().toLowerCase(), password: form.values.password, rememberMe: Boolean(element.querySelector<HTMLInputElement>('[name="remember"]')?.checked) })
+      setStatus('Sign in confirmed by the authentication service. Your dashboard will be available after it is built.')
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in.') }
+    finally { setPending(false) }
+  }
+  const handleGoogle = async () => {
+    setPending(true); setError(null)
+    try { await authApi.startGoogleAuth() }
+    catch (e) { setError(e instanceof Error ? e.message : 'Google authentication is unavailable.'); setPending(false) }
+  }
+  return (
+    <FormShell active={active} className={className}>
+      <div className="mb-8 flex flex-col gap-2">
+        <h2 className="stagger-item font-display text-3xl font-bold text-foreground" style={s(0)}>Welcome back</h2>
+        <p className="stagger-item text-sm text-muted-foreground" style={s(1)}>Continue your journey with Ghoomi.</p>
+      </div>
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <AuthField className="stagger-item" style={s(2)} {...email} invalid={Boolean(error)} type="email" label="Email Address" icon={AtSign} autoComplete="email" required />
+        <div className="stagger-item flex flex-col" style={s(3)}>
+          <AuthField {...form.field('password')} invalid={Boolean(error)} type="password" label="Password" icon={Lock} autoComplete="current-password" />
+          <div className="mt-3 flex items-center justify-between">
+            <Checkbox name="remember" label="Remember me" />
+            <Link href="/forgot-password" className="text-xs text-muted-foreground transition-colors hover:text-primary">Forgot password?</Link>
+          </div>
+          <FormAlert message={error} />
+        </div>
+        <div className="mt-1 flex flex-col gap-3">
+          <div className="stagger-item" style={s(4)}><PrimaryButton loading={pending}>Login</PrimaryButton></div>
+          <div className="stagger-item" style={s(5)}><Divider /></div>
+          <div className="stagger-item" style={s(6)}><GoogleButton disabled={pending} onClick={handleGoogle} /></div>
+          <div className="stagger-item" style={s(7)}><EmailButton onClick={() => document.querySelector<HTMLInputElement>('input[name="email"]')?.focus()} /></div>
+        </div>
+        <FormStatus message={status} />
+      </form>
+      <p className="stagger-item mt-2 text-center text-sm text-muted-foreground" style={s(8)}>
+        {"Don't have an account? "}
+        <button type="button" onClick={onSwitch} className="font-semibold text-primary underline-offset-4 hover:underline focus-visible:underline">Create an account</button>
+      </p>
+    </FormShell>
+  )
+}
+
+
+========== frontend\src\components\auth\signup-form.tsx ==========
+
+
+'use client'
+
+import { Building2, Lock, Mail, MapPin, Phone, ShieldCheck, User } from 'lucide-react'
+import { useId, useState, type CSSProperties, type FormEvent } from 'react'
+import { AuthField } from './auth-field'
+import { CATEGORIES, CategoryPicker, type CategoryId } from './category-picker'
+import {
+  Collapsible,
+  Divider,
+  EmailButton,
+  FormAlert,
+  FormShell,
+  FormStatus,
+  GoogleButton,
+  PrimaryButton,
+  staggerStyle,
+} from './form-parts'
+import { PasswordStrength } from './password-strength'
+import { RoleSelector, type Role } from './role-selector'
+import { useFormState } from './use-form-state'
+import { emailError, passwordError } from './validation'
+import { authApi } from '@/services/auth-api'
+
+const FIELDS = ['name', 'email', 'phone', 'password', 'confirm'] as const
+type Values = Record<(typeof FIELDS)[number], string>
+type AdminStep = 'category' | 'account' | 'business'
+type SlideDirection = 'forward' | 'back'
+
+function validate(values: Values) {
+  const errors: Partial<Values> = {}
+
+  if (!values.name.trim()) errors.name = 'Name is required'
+
+  errors.email = emailError(values.email)
+
+  const phone = values.phone.trim()
+  if (!phone) errors.phone = 'Phone number is required'
+  else if (!/^[6-9]\d{9}$/.test(phone)) {
+    errors.phone = 'Enter a valid 10-digit phone number'
+  }
+
+  errors.password = passwordError(values.password)
+
+  if (!values.confirm) errors.confirm = 'Confirm password is required'
+  else if (values.confirm !== values.password) {
+    errors.confirm = 'Passwords do not match'
+  }
+
+  return errors
+}
+
+function getBusinessFields(category: CategoryId) {
+  if (category === 'hotels') {
+    return { name: 'Hotel / Property Name', type: 'Property Type' }
+  }
+
+  if (category === 'restaurants') {
+    return { name: 'Restaurant Name', type: 'Cuisine Type' }
+  }
+
+  return { name: 'Tour Company Name', type: 'Tour Service Type' }
+}
+
+export function SignupForm({
+  active,
+  onSwitch,
+  className,
+}: {
+  active: boolean
+  onSwitch: () => void
+  className?: string
+}) {
+  const [role, setRole] = useState<Role>('user')
+  const [adminStep, setAdminStep] = useState<AdminStep>('category')
+  const [slideDirection, setSlideDirection] = useState<SlideDirection>('forward')
+  const [categories, setCategories] = useState<CategoryId[]>([])
+
+  const [businessName, setBusinessName] = useState('')
+  const [businessType, setBusinessType] = useState('')
+  const [businessCity, setBusinessCity] = useState('')
+
+  const [passwordFocused, setPasswordFocused] = useState(false)
+  const [status, setStatus] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, setPending] = useState(false)
+
+  const form = useFormState(FIELDS, validate, () => {
+    setStatus(null)
+    setError(null)
+  })
+
+  const strengthId = useId()
+  const s = (i: number) => staggerStyle(i, -1)
+  const isAdmin = role === 'admin'
+  const selectedCategory = categories[0] ?? null
+  const fields = selectedCategory ? getBusinessFields(selectedCategory) : null
+  const categoryTitle = CATEGORIES.find(
+    (category) => category.id === selectedCategory
+  )?.title
+
+  const animationClass =
+    slideDirection === 'back' ? 'admin-step-back' : 'admin-step-forward'
+
+  const swapDir = {
+    ['--dir' as string]: isAdmin ? 1 : -1,
+  } as CSSProperties
+
+  const changeRole = (next: Role) => {
+    if (next === role || pending) return
+
+    setRole(next)
+    setAdminStep('category')
+    setSlideDirection('forward')
+    setStatus(null)
+    setError(null)
+  }
+
+  // Selecting a business category automatically opens account details.
+  const chooseCategory = (id: CategoryId) => {
+    setCategories([id])
+    setBusinessName('')
+    setBusinessType('')
+    setBusinessCity('')
+    setError(null)
+    setSlideDirection('forward')
+    setAdminStep('account')
+  }
+
+  const previousStep = (step: AdminStep) => {
+    setError(null)
+    setStatus(null)
+    setSlideDirection('back')
+    setAdminStep(step)
+  }
+
+  const continueToBusiness = () => {
+    setError(null)
+    setStatus(null)
+
+    if (!form.submit()) return
+
+    setSlideDirection('forward')
+    setAdminStep('business')
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (pending) return
+
+    setError(null)
+    setStatus(null)
+
+    if (isAdmin && (adminStep !== 'business' || !selectedCategory)) {
+      setError('Please choose a business category before registering.')
+      return
+    }
+
+    if (!form.submit()) {
+      if (isAdmin) {
+        setSlideDirection('back')
+        setAdminStep('account')
+      }
+      return
+    }
+
+    if (
+      isAdmin &&
+      (!businessName.trim() || !businessType.trim() || !businessCity.trim())
+    ) {
+      setError('Please complete all business details.')
+      return
+    }
+
+    setPending(true)
+
+    try {
+      // Business registration creates a partner application.
+      // It does not grant privileged administrator permissions.
+      await authApi.register({
+        name: form.values.name.trim(),
+        email: form.values.email.trim().toLowerCase(),
+        phone: `+91${form.values.phone.trim()}`,
+        password: form.values.password,
+        accountType: isAdmin ? 'partner_application' : 'traveller',
+
+        ...(isAdmin
+          ? {
+              businessCategories: categories,
+              businessDetails: {
+                businessName: businessName.trim(),
+                businessType: businessType.trim(),
+                city: businessCity.trim(),
+              },
+            }
+          : {}),
+      })
+
+      setStatus(
+        isAdmin
+          ? 'Your business application was accepted by the server for review. No admin access has been granted.'
+          : 'Your account registration was accepted by the server.'
+      )
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to create account.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  const handleGoogle = async () => {
+    if (pending) return
+
+    setPending(true)
+    setError(null)
+
+    try {
+      await authApi.startGoogleAuth()
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : 'Google authentication is unavailable.'
+      )
+      setPending(false)
+    }
+  }
+
+  return (
+    <FormShell active={active} className={className}>
+      <div className="mb-4 flex flex-col gap-2">
+        <h2
+          className="stagger-item font-display text-3xl font-bold text-foreground"
+          style={s(0)}
+        >
+          Create your account
+        </h2>
+
+        <div className="stagger-item overflow-hidden" style={s(1)}>
+          <p
+            key={role}
+            className="mode-swap text-sm text-muted-foreground"
+            style={swapDir}
+          >
+            {isAdmin
+              ? 'Request a business partnership and welcome travellers.'
+              : 'Start planning better journeys with Ghoomi.'}
+          </p>
+        </div>
+      </div>
+
+      <div className="stagger-item mb-3" style={s(2)}>
+        <RoleSelector value={role} onChange={changeRole} />
+      </div>
+
+      {/* STEP 1 â€” BUSINESS CATEGORY */}
+      {isAdmin && adminStep === 'category' && (
+        <div className="stagger-item" style={s(3)}>
+          <div key="category" className={`${animationClass} space-y-3`}>
+            <p className="text-xs font-medium text-primary">
+              Step 1 of 3 Â· Choose a business category
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Select Hotels, Restaurants, or Tours to continue.
+            </p>
+            <CategoryPicker
+              selected={categories}
+              onToggle={chooseCategory}
+            />
+          </div>
+        </div>
+      )}
+
+      {(!isAdmin || adminStep !== 'category') && (
+        <form
+          noValidate
+          onSubmit={handleSubmit}
+          className="stagger-item flex flex-col gap-3"
+          style={s(3)}
+        >
+          {/* USER SIGNUP / ADMIN STEP 2 */}
+          {(!isAdmin || adminStep === 'account') && (
+            <div
+              key="account"
+              className={`${isAdmin ? animationClass : ''} space-y-3`}
+            >
+              {isAdmin && (
+                <p className="text-xs font-medium text-primary">
+                  Step 2 of 3 Â· {categoryTitle} Â· Account details
+                </p>
+              )}
+
+              <AuthField
+                className="stagger-item"
+                style={s(3)}
+                {...form.field('name')}
+                label="Name"
+                icon={User}
+                autoComplete="name"
+              />
+
+              <AuthField
+                className="stagger-item"
+                style={s(4)}
+                {...form.field('email')}
+  type="email"
+  label="Email Address"
+  icon={Mail}
+  autoComplete="email"
+  required
+/>
+<AuthField
+  className="stagger-item"
+  style={s(5)}
+  {...form.field('phone')}
+                type="tel"
+                label="Phone Number"
+                icon={Phone}
+                autoComplete="tel"
+              />
+
+              <div className="stagger-item" style={s(5)}>
+                <AuthField
+                  {...form.field('password')}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => {
+                    setPasswordFocused(false)
+                    form.field('password').onBlur()
+                  }}
+                  aria-describedby={strengthId}
+                  type="password"
+                  label="Password"
+                  icon={Lock}
+                  autoComplete="new-password"
+                />
+
+                <Collapsible
+                  open={passwordFocused || form.values.password.length > 0}
+                >
+                  <PasswordStrength
+                    id={strengthId}
+                    password={form.values.password}
+                    className="pt-2"
+                  />
+                </Collapsible>
+              </div>
+
+              <AuthField
+                className="stagger-item"
+                style={s(6)}
+                {...form.field('confirm')}
+                type="password"
+                label="Confirm Password"
+                icon={ShieldCheck}
+                autoComplete="new-password"
+              />
+            </div>
+          )}
+
+          {/* ADMIN STEP 3 â€” BUSINESS DETAILS */}
+          {isAdmin && adminStep === 'business' && selectedCategory && fields && (
+            <div key="business" className={`${animationClass} space-y-3`}>
+              <p className="text-xs font-medium text-primary">
+                Step 3 of 3 Â· {categoryTitle} Â· Business details
+              </p>
+
+              <AuthField
+                name="businessName"
+                label={fields.name}
+                icon={Building2}
+                value={businessName}
+                required
+                onChange={(e) => {
+                  setBusinessName(e.target.value)
+                  setError(null)
+                }}
+              />
+
+              <AuthField
+                name="businessType"
+                label={fields.type}
+                icon={Building2}
+                value={businessType}
+                required
+                onChange={(e) => {
+                  setBusinessType(e.target.value)
+                  setError(null)
+                }}
+              />
+
+              <AuthField
+                name="businessCity"
+                label="City"
+                icon={MapPin}
+                value={businessCity}
+                required
+                autoComplete="address-level2"
+                onChange={(e) => {
+                  setBusinessCity(e.target.value)
+                  setError(null)
+                }}
+              />
+
+              <button
+                type="button"
+                onClick={() => previousStep('account')}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Back to Account Details
+              </button>
+            </div>
+          )}
+
+          {/* WIZARD NAVIGATION */}
+          {isAdmin && adminStep === 'account' ? (
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={continueToBusiness}
+                className="h-11 w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Continue to Business Details
+              </button>
+
+              <button
+                type="button"
+                onClick={() => previousStep('category')}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Back to Categories
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex flex-col gap-3">
+              <div className="stagger-item" style={s(7)}>
+                <PrimaryButton loading={pending}>
+                  Create Account
+                </PrimaryButton>
+              </div>
+
+              <div className="stagger-item" style={s(8)}>
+                <Divider />
+              </div>
+
+              <div className="stagger-item" style={s(9)}>
+                <GoogleButton
+                  disabled={pending}
+                  onClick={handleGoogle}
+                />
+              </div>
+
+              <div className="stagger-item" style={s(10)}>
+                <EmailButton
+                  onClick={() => {
+                    setError('Email registration has not been configured yet.')
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <FormAlert message={error} />
+          <FormStatus message={status} />
+        </form>
+      )}
+
+      <p
+        className="stagger-item mt-2 text-center text-sm text-muted-foreground"
+        style={s(11)}
+      >
+        {'Already have an account? '}
+        <button
+          type="button"
+          onClick={onSwitch}
+          className="font-semibold text-primary underline-offset-4 hover:underline focus-visible:underline"
+        >
+          Login
+        </button>
+      </p>
+    </FormShell>
+  )
+}

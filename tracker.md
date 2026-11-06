@@ -21,8 +21,8 @@ A work item may be `Implemented` without being `Tested` or `Deployed`. **Never**
 
 | Milestone | Status | Release significance | Exit criteria |
 |---|---|---|---|
-| M0 — audit & decisions | Not started | P0 prerequisite | Repo inspected, stack/provider modes confirmed |
-| M1 — foundation & identity | Not started | P0 | API/DB/CI, auth and account isolation |
+| M0 — audit & decisions | Tested | P0 prerequisite | Repo inspected, stack/provider modes confirmed |
+| M1 — foundation & identity | In progress | P0 | API/DB/CI, auth and account isolation |
 | M2 — trip and editorial discovery | Not started | P0 | Persisted trip + useful destination catalog |
 | M3 — AI itinerary, budget and hub | Not started | P0 | End-to-end editable planning + accurate totals |
 | M4 — travel marketplace & handoffs | Not started | P0/P1 | Truthful flight/train/bus/cab/stay results and supported next actions |
@@ -35,8 +35,8 @@ A work item may be `Implemented` without being `Tested` or `Deployed`. **Never**
 
 | Task ID | Priority | Requirement IDs | Deliverable | Depends on | Current status |
 |---|---|---|---|---|---|
-| `IMP-00` | P0 | All | Repo audit, decision and provider capability matrix | None | Not started |
-| `IMP-01` | P0 | `GHO-P1-QUALITY`, `HOME` | App/API shells, design system, DB migrations, CI/staging baseline | IMP-00 | Not started |
+| `IMP-00` | P0 | All | Repo audit, decision and provider capability matrix | None | Tested |
+| `IMP-01` | P0 | `GHO-P1-QUALITY`, `HOME` | App/API shells, design system, DB migrations, CI/staging baseline | IMP-00 | Tested |
 | `IMP-02` | P0 | `AUTH`, `PROFILE` | Secure accounts, verification, reset, travelers, permissions | IMP-01 | Not started |
 | `IMP-03` | P0 | `TRIP` | Trip creation wizard, persistence, edit/resume/version | IMP-02 | Not started |
 | `IMP-04` | P0/P1 | `DEST`, `FOOD`, `ACT` | Destination and place catalog, filters, itinerary add | IMP-01/03 | Not started |
@@ -50,7 +50,7 @@ A work item may be `Implemented` without being `Tested` or `Deployed`. **Never**
 | `IMP-12` | P0 | `QUALITY` | Regression, auth security, financial/state tests, backups, legal/operational gate | IMP-01..11 | Not started |
 | `IMP-13` | P0 | `QUALITY` | Staging → controlled production release, monitoring, rollback | IMP-12 | Not started |
 
-**Agent next action:** `IMP-00` (read docs and inspect repo) — do not attempt booking/payment activation until suppliers are verified.
+**Agent next action:** `IMP-02` (Secure accounts, profile, saved travelers - Auth vertical slice). Ensure local MySQL 8.4 service is running for live migration and DB persistence.
 
 ## 4. Source initial-page coverage checklist
 
@@ -148,6 +148,7 @@ See `memory.md` ADR-001 to ADR-009. None of the proposed architecture/design cho
 | Date | Branch/area | Tasks and statuses changed | Tests actually run | Results | Blockers | Next item |
 |---|---|---|---|---|---|---|
 | 2026-11-03 | Documentation preparation | Nine requested specs drafted, plus AGENTS.md/README; code implementation not verified | Markdown structural verification passed (file presence, code-fence pairing, cross-file references and ZIP integrity) | No app, database or provider integration tests performed | BLK-001–007 | IMP-00 |
+| 2026-11-06 | Backend Bootstrap (IMP-01) | IMP-00 -> Tested, IMP-01 -> Tested. Initialized Java 21 / Spring Boot 3.4.3 backend, Flyway V1 migration (24 tables), SecurityConfig, CORS, ApiResponse envelope, Health endpoint | `mvn clean compile` -> BUILD SUCCESS (18 source files compiled with Java 21); `mvn test` -> BUILD SUCCESS (HealthControllerTest passed) | Health check endpoint verified, Flyway initial migration prepared | MySQL 8.4 port 3306 service offline | IMP-02 |
 
 ### Copy/paste entry for future sessions
 

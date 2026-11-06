@@ -1,0 +1,25 @@
+# Frontend dependencies and generated files
+**/node_modules/
+**/.next/
+**/out/
+
+# Java / Maven
+**/target/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local backups
+*.bak
+*.backup*
+*.pre-email-*
+
+# IDE and OS files
+.idea/
+.DS_Store
+Thumbs.db

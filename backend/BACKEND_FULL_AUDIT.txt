@@ -1,0 +1,1424 @@
+========== JAVA ENTITY FILES ==========
+
+
+========== C:\Users\ASUS\OneDrive\Desktop\ghomi\Ghoomi-Tourism-and-travel-website.-\backend\src\main\java\com\ghoomi\modules\auth\OtpRecord.java ==========
+package com.ghoomi.modules.auth;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/**
+ * JPA entity mapping the {@code otp_records} table (added in V2 migration).
+ *
+ * <p>
+ * OTP values are stored as a BCrypt hash — never plaintext.
+ * A record is consumed (single-use) on successful verification.
+ */
+@Entity
+@Table(name = "otp_records")
+public class OtpRecord {
+
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    /** The email address this OTP was issued to. */
+    @Column(name = "email", length = 254, nullable = false)
+    private String email;
+
+    /** BCrypt hash of the 6-digit OTP — never store plaintext. */
+    @Column(name = "otp_hash", length = 72, nullable = false)
+    private String otpHash;
+
+    /**
+     * Purpose discriminator — currently only PASSWORD_RESET is used in Partition 1.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", length = 30, nullable = false)
+    private OtpPurpose purpose;
+
+    /** UTC timestamp after which this OTP must be rejected. */
+    @Column(name = "expires_at", nullable = false)
+    private LocalDateTime expiresAt;
+
+    /** Whether this record has already been used. */
+    @Column(name = "used", nullable = false)
+    private boolean used = false;
+
+    /** Number of verification attempts made against this OTP. */
+    @Column(name = "attempts", nullable = false)
+    private byte attempts = 0;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+        }
+        createdAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    protected OtpRecord() {
+    }
+
+    public OtpRecord(String email, String otpHash, OtpPurpose purpose, LocalDateTime expiresAt) {
+        this.email = email;
+        this.otpHash = otpHash;
+        this.purpose = purpose;
+        this.expiresAt = expiresAt;
+    }
+
+    // ── Getters / Setters ────────────────────────────────────────────────────
+
+    public String getId() {
+        return id;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public String getOtpHash() {
+        return otpHash;
+    }
+
+    public OtpPurpose getPurpose() {
+        return purpose;
+    }
+
+    public LocalDateTime getExpiresAt() {
+        return expiresAt;
+    }
+
+    public boolean isUsed() {
+        return used;
+    }
+
+    public void setUsed(boolean used) {
+        this.used = used;
+    }
+
+    public int getAttempts() {
+        return attempts;
+    }
+
+    public void incrementAttempts() {
+        this.attempts++;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+}
+
+
+========== C:\Users\ASUS\OneDrive\Desktop\ghomi\Ghoomi-Tourism-and-travel-website.-\backend\src\main\java\com\ghoomi\modules\user\EmergencyContact.java ==========
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/**
+ * JPA entity mapping the {@code emergency_contacts} table.
+ *
+ * <p>Column mapping matches {@code V1__ghoomi_partition1_reference.sql} exactly:
+ * <pre>
+ *   id                CHAR(36)      PK
+ *   owner_user_id     CHAR(36)      FK → users.id  ON DELETE CASCADE
+ *   contact_name      VARCHAR(150)  NOT NULL
+ *   contact_phone_e164 VARCHAR(20)  NOT NULL
+ *   relationship_label VARCHAR(100) nullable
+ *   verified_at       DATETIME(6)   nullable
+ *   created_at        DATETIME(6)   NOT NULL
+ * </pre>
+ *
+ * <p>No {@code updated_at}, {@code email}, or {@code is_primary} columns exist
+ * in the reference schema — those fields are intentionally absent here.
+ */
+@Entity
+@Table(name = "emergency_contacts")
+public class EmergencyContact {
+
+    /** Application-generated UUID stored as CHAR(36) ASCII BINARY. */
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    /** FK → users.id — the account holder who owns this emergency contact. */
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "owner_user_id", columnDefinition = "CHAR(36)", nullable = false)
+    private User owner;
+
+    /** Maps to {@code contact_name VARCHAR(150) NOT NULL}. */
+    @Column(name = "contact_name", length = 150, nullable = false)
+    private String contactName;
+
+    /** Maps to {@code contact_phone_e164 VARCHAR(20) NOT NULL}. */
+    @Column(name = "contact_phone_e164", length = 20, nullable = false)
+    private String contactPhoneE164;
+
+    /** Maps to {@code relationship_label VARCHAR(100)} — nullable. */
+    @Column(name = "relationship_label", length = 100)
+    private String relationshipLabel;
+
+    /** Maps to {@code verified_at DATETIME(6)} — null until the contact is verified. */
+    @Column(name = "verified_at")
+    private LocalDateTime verifiedAt;
+
+    /** Maps to {@code created_at DATETIME(6) NOT NULL}. Set once on persist. */
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+        }
+        createdAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    protected EmergencyContact() {}
+
+    /**
+     * Convenience constructor for the minimum required fields.
+     *
+     * @param owner          the owning user account
+     * @param contactName    full name of the emergency contact
+     * @param contactPhoneE164 E.164 phone number, e.g. {@code +919876543210}
+     */
+    public EmergencyContact(User owner, String contactName, String contactPhoneE164) {
+        this.owner = owner;
+        this.contactName = contactName;
+        this.contactPhoneE164 = contactPhoneE164;
+    }
+
+    // ── Getters / Setters ────────────────────────────────────────────────────
+
+    public String getId() { return id; }
+
+    public User getOwner() { return owner; }
+    public void setOwner(User owner) { this.owner = owner; }
+
+    public String getContactName() { return contactName; }
+    public void setContactName(String contactName) { this.contactName = contactName; }
+
+    public String getContactPhoneE164() { return contactPhoneE164; }
+    public void setContactPhoneE164(String contactPhoneE164) { this.contactPhoneE164 = contactPhoneE164; }
+
+    public String getRelationshipLabel() { return relationshipLabel; }
+    public void setRelationshipLabel(String relationshipLabel) { this.relationshipLabel = relationshipLabel; }
+
+    public LocalDateTime getVerifiedAt() { return verifiedAt; }
+    public void setVerifiedAt(LocalDateTime verifiedAt) { this.verifiedAt = verifiedAt; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+}
+
+
+========== C:\Users\ASUS\OneDrive\Desktop\ghomi\Ghoomi-Tourism-and-travel-website.-\backend\src\main\java\com\ghoomi\modules\user\SavedTraveller.java ==========
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+@Entity
+@Table(name = "saved_travellers")
+public class SavedTraveller {
+
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "owner_user_id", columnDefinition = "CHAR(36)", nullable = false)
+    private User owner;
+
+    @Column(name = "display_name", length = 150, nullable = false)
+    private String fullName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "age_category", length = 191)
+    private AgeCategory ageCategory;
+
+    @Column(name = "notes", columnDefinition = "TEXT")
+    private String notes;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = UUID.randomUUID().toString();
+        }
+        if (createdAt == null) {
+            createdAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+    }
+
+    protected SavedTraveller() {}
+
+    public SavedTraveller(User owner, String fullName, AgeCategory ageCategory) {
+        this.owner = owner;
+        this.fullName = fullName;
+        this.ageCategory = ageCategory;
+    }
+
+    public String getId() { return id; }
+
+    public User getOwner() { return owner; }
+    public void setOwner(User owner) { this.owner = owner; }
+
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
+
+    public AgeCategory getAgeCategory() { return ageCategory; }
+    public void setAgeCategory(AgeCategory ageCategory) { this.ageCategory = ageCategory; }
+
+    public String getNotes() { return notes; }
+    public void setNotes(String notes) { this.notes = notes; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+}
+
+
+========== C:\Users\ASUS\OneDrive\Desktop\ghomi\Ghoomi-Tourism-and-travel-website.-\backend\src\main\java\com\ghoomi\modules\user\User.java ==========
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import java.time.LocalDateTime;
+
+/**
+ * JPA entity mapping the {@code users} table.
+ *
+ * <p>UUID primary key: application-generated via {@link java.util.UUID#randomUUID()},
+ * stored as {@code CHAR(36)} ASCII BINARY — no auto-increment.
+ *
+ * <p>Timestamps: all stored as {@code DATETIME(6)} in UTC.
+ *
+ * <p>Role: server-side only — never trust role values from client requests.
+ */
+@Entity
+@Table(name = "users")
+public class User {
+
+    /** Application-generated UUID stored as CHAR(36). */
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    @Column(name = "email", length = 254, nullable = false, unique = true)
+    private String email;
+
+    /** E.164-normalised phone number, e.g. {@code +919876543210}. */
+    @Column(name = "phone_e164", length = 20)
+    private String phoneE164;
+
+    /** BCrypt-hashed password (cost factor 12). Never store plaintext. */
+    @Column(name = "password_hash", length = 72, nullable = false)
+    private String passwordHash;
+
+    @Column(name = "full_name", length = 200, nullable = false)
+    private String fullName;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", nullable = false, length = 20)
+    private UserRole role;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "account_status", nullable = false, length = 30)
+    private AccountStatus accountStatus;
+
+    @Column(name = "email_verified", nullable = false)
+    private boolean emailVerified = false;
+
+    @Column(name = "phone_verified", nullable = false)
+    private boolean phoneVerified = false;
+
+    @Column(name = "account_type", length = 20)
+    private String accountType;
+
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    /** Set UUID before first persist. */
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+        }
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    protected User() {}
+
+    public User(String email, String phoneE164, String passwordHash, String fullName,
+                UserRole role, AccountStatus accountStatus, String accountType) {
+        this.email = email;
+        this.phoneE164 = phoneE164;
+        this.passwordHash = passwordHash;
+        this.fullName = fullName;
+        this.role = role;
+        this.accountStatus = accountStatus;
+        this.accountType = accountType;
+    }
+
+    // ── Getters / Setters ────────────────────────────────────────────────────
+
+    public String getId() { return id; }
+
+    public String getEmail() { return email; }
+    public void setEmail(String email) { this.email = email; }
+
+    public String getPhoneE164() { return phoneE164; }
+    public void setPhoneE164(String phoneE164) { this.phoneE164 = phoneE164; }
+
+    public String getPasswordHash() { return passwordHash; }
+    public void setPasswordHash(String passwordHash) { this.passwordHash = passwordHash; }
+
+    public String getFullName() { return fullName; }
+    public void setFullName(String fullName) { this.fullName = fullName; }
+
+    public UserRole getRole() { return role; }
+    public void setRole(UserRole role) { this.role = role; }
+
+    public AccountStatus getAccountStatus() { return accountStatus; }
+    public void setAccountStatus(AccountStatus accountStatus) { this.accountStatus = accountStatus; }
+
+    public boolean isEmailVerified() { return emailVerified; }
+    public void setEmailVerified(boolean emailVerified) { this.emailVerified = emailVerified; }
+
+    public boolean isPhoneVerified() { return phoneVerified; }
+    public void setPhoneVerified(boolean phoneVerified) { this.phoneVerified = phoneVerified; }
+
+    public String getAccountType() { return accountType; }
+    public void setAccountType(String accountType) { this.accountType = accountType; }
+
+    public LocalDateTime getLastLoginAt() { return lastLoginAt; }
+    public void setLastLoginAt(LocalDateTime lastLoginAt) { this.lastLoginAt = lastLoginAt; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+
+
+========== C:\Users\ASUS\OneDrive\Desktop\ghomi\Ghoomi-Tourism-and-travel-website.-\backend\src\main\java\com\ghoomi\modules\user\UserProfile.java ==========
+package com.ghoomi.modules.user;
+
+import jakarta.persistence.*;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+
+/**
+ * JPA entity mapping the {@code user_profiles} table.
+ * One-to-one with {@link User} — same lifecycle.
+ */
+@Entity
+@Table(name = "user_profiles")
+public class UserProfile {
+
+    @Id
+    @Column(name = "id", columnDefinition = "CHAR(36)", nullable = false, updatable = false)
+    private String id;
+
+    /** FK → users.id */
+    @OneToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id", columnDefinition = "CHAR(36)", nullable = false, unique = true)
+    private User user;
+
+    @Column(name = "avatar_url", length = 500)
+    private String avatarUrl;
+
+    @Column(name = "date_of_birth")
+    private LocalDate dateOfBirth;
+
+    @Column(name = "gender", length = 20)
+    private String gender;
+
+    @Column(name = "nationality", length = 100)
+    private String nationality;
+
+    @Column(name = "passport_number", length = 50)
+    private String passportNumber;
+
+    @Column(name = "passport_expiry")
+    private LocalDate passportExpiry;
+
+    @Column(name = "preferred_currency", length = 3)
+    private String preferredCurrency;
+
+    @Column(name = "preferred_language", length = 10)
+    private String preferredLanguage;
+
+    @Column(name = "bio", columnDefinition = "TEXT")
+    private String bio;
+
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private LocalDateTime createdAt;
+
+    @Column(name = "updated_at", nullable = false)
+    private LocalDateTime updatedAt;
+
+    @PrePersist
+    protected void onCreate() {
+        if (id == null) {
+            id = java.util.UUID.randomUUID().toString();
+        }
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneOffset.UTC);
+        createdAt = now;
+        updatedAt = now;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now(java.time.ZoneOffset.UTC);
+    }
+
+    // ── Constructors ─────────────────────────────────────────────────────────
+
+    protected UserProfile() {}
+
+    public UserProfile(User user) {
+        this.user = user;
+    }
+
+    // ── Getters / Setters ────────────────────────────────────────────────────
+
+    public String getId() { return id; }
+
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
+
+    public String getAvatarUrl() { return avatarUrl; }
+    public void setAvatarUrl(String avatarUrl) { this.avatarUrl = avatarUrl; }
+
+    public LocalDate getDateOfBirth() { return dateOfBirth; }
+    public void setDateOfBirth(LocalDate dateOfBirth) { this.dateOfBirth = dateOfBirth; }
+
+    public String getGender() { return gender; }
+    public void setGender(String gender) { this.gender = gender; }
+
+    public String getNationality() { return nationality; }
+    public void setNationality(String nationality) { this.nationality = nationality; }
+
+    public String getPassportNumber() { return passportNumber; }
+    public void setPassportNumber(String passportNumber) { this.passportNumber = passportNumber; }
+
+    public LocalDate getPassportExpiry() { return passportExpiry; }
+    public void setPassportExpiry(LocalDate passportExpiry) { this.passportExpiry = passportExpiry; }
+
+    public String getPreferredCurrency() { return preferredCurrency; }
+    public void setPreferredCurrency(String preferredCurrency) { this.preferredCurrency = preferredCurrency; }
+
+    public String getPreferredLanguage() { return preferredLanguage; }
+    public void setPreferredLanguage(String preferredLanguage) { this.preferredLanguage = preferredLanguage; }
+
+    public String getBio() { return bio; }
+    public void setBio(String bio) { this.bio = bio; }
+
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+}
+
+
+
+========== FLYWAY MIGRATIONS ==========
+
+
+========== V1__ghoomi_partition1_initial_schema.sql ==========
+-- Ghoomi Partition 1 reference schema (MySQL 8.4 LTS / InnoDB).
+-- Generate UUIDs in Java (UUID.randomUUID().toString()); persist as CHAR(36) ASCII BINARY collation.
+-- All DATETIME(6) values are UTC by application contract. Set JDBC connectionTimeZone=UTC and configure UTC session time zone.
+-- Flyway should manage versioned migrations. Run only on a fresh development/staging database after review.
+-- Do not disable FOREIGN_KEY_CHECKS for normal application writes.
+SET time_zone = '+00:00';
+
+CREATE TABLE users (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  email VARCHAR(254) COLLATE utf8mb4_0900_ai_ci NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  email_verified_at DATETIME(6),
+  role VARCHAR(191) NOT NULL DEFAULT 'USER' CHECK (role IN ('USER','SUPPORT','ADMIN','SUPER_ADMIN')),
+  is_active TINYINT(1) NOT NULL DEFAULT TRUE,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE user_profiles (
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  display_name VARCHAR(150) NOT NULL,
+  phone_e164 VARCHAR(20),
+  travel_preferences JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  avatar_object_key TEXT,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_user_profiles_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE saved_travellers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  display_name VARCHAR(150) NOT NULL,
+  age_category VARCHAR(191) CHECK (age_category IN ('CHILD','ADULT','SENIOR','UNSPECIFIED')),
+  notes TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_saved_travellers_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE emergency_contacts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  contact_name VARCHAR(150) NOT NULL,
+  contact_phone_e164 VARCHAR(20) NOT NULL,
+  relationship_label VARCHAR(100),
+  verified_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_emergency_contacts_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE destinations (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  slug VARCHAR(160) NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL,
+  state_region VARCHAR(150),
+  country_code CHAR(2) NOT NULL,
+  latitude DECIMAL(9,6),
+  longitude DECIMAL(9,6),
+  summary TEXT,
+  content_source TEXT,
+  image_license_ref TEXT,
+  active TINYINT(1) NOT NULL DEFAULT TRUE,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE places (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  destination_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  name VARCHAR(200) NOT NULL,
+  category VARCHAR(60) NOT NULL CHECK (category IN ('ATTRACTION','RESTAURANT','ACTIVITY','OTHER')),
+  address_label TEXT,
+  latitude DECIMAL(9,6),
+  longitude DECIMAL(9,6),
+  description TEXT,
+  source_name VARCHAR(180),
+  source_url TEXT,
+  info_verified_at DATETIME(6),
+  opening_hours JSON,
+  estimated_cost_minor BIGINT CHECK (estimated_cost_minor >= 0),
+  currency CHAR(3),
+  active TINYINT(1) NOT NULL DEFAULT TRUE,
+  CONSTRAINT fk_places_destination_id FOREIGN KEY (destination_id) REFERENCES destinations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE providers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  code VARCHAR(80) COLLATE utf8mb4_0900_bin NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL,
+  vertical VARCHAR(32) NOT NULL CHECK (vertical IN ('FLIGHT','TRAIN','BUS','CAB','STAY','ACTIVITY','MAP','PAYMENT')),
+  capability VARCHAR(40) NOT NULL DEFAULT 'PLANNING_ONLY'
+    CHECK (capability IN ('PLANNING_ONLY','REDIRECT','LIVE_SEARCH_EXTERNAL_CHECKOUT','DIRECT_BOOKING')),
+  authorization_status VARCHAR(25) NOT NULL DEFAULT 'UNVERIFIED'
+    CHECK (authorization_status IN ('UNVERIFIED','UNDER_REVIEW','APPROVED','SUSPENDED')),
+  credentials_ref VARCHAR(255), -- secret-manager reference only
+  terms_url TEXT,
+  enabled TINYINT(1) NOT NULL DEFAULT FALSE,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE provider_offers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_offer_key VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
+  vertical VARCHAR(32) NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  details JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  origin_label VARCHAR(200),
+  destination_label VARCHAR(200),
+  starts_at DATETIME(6),
+  ends_at DATETIME(6),
+  price_minor BIGINT CHECK (price_minor >= 0),
+  currency CHAR(3),
+  price_basis VARCHAR(24) CHECK (price_basis IN ('PER_PERSON','PER_GROUP','PER_ROOM','TOTAL','UNKNOWN')),
+  data_status VARCHAR(24) NOT NULL CHECK (data_status IN ('VERIFIED_LIVE','PROVIDER_LISTED','ESTIMATED','UNAVAILABLE')),
+  checked_at DATETIME(6) NOT NULL,
+  valid_until DATETIME(6),
+  terms_url TEXT,
+  redirect_url TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(provider_id, provider_offer_key, checked_at),
+  CONSTRAINT fk_provider_offers_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trips (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  destination_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  title VARCHAR(255) NOT NULL,
+  origin_label VARCHAR(200) NOT NULL,
+  destination_label VARCHAR(200) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Kolkata',
+  traveler_count INTEGER NOT NULL CHECK (traveler_count > 0 AND traveler_count <= 50),
+  plan_mode VARCHAR(16) NOT NULL DEFAULT 'BALANCED'
+    CHECK (plan_mode IN ('BUDGET','BALANCED','COMFORT','CUSTOM')),
+  target_budget_minor BIGINT CHECK (target_budget_minor >= 0),
+  currency CHAR(3) NOT NULL DEFAULT 'INR',
+  own_vehicle TINYINT(1) NOT NULL DEFAULT FALSE,
+  already_have_stay TINYINT(1) NOT NULL DEFAULT FALSE,
+  preferences JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  status VARCHAR(35) NOT NULL DEFAULT 'DRAFT'
+    CHECK (status IN ('DRAFT','PLANNED','ACTIVE','COMPLETED','CANCELLED')),
+  version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CHECK (end_date >= start_date),
+  CONSTRAINT fk_trips_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id),
+  CONSTRAINT fk_trips_destination_id FOREIGN KEY (destination_id) REFERENCES destinations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE itinerary_days (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  day_date DATE NOT NULL,
+  day_index INTEGER NOT NULL CHECK (day_index >= 1),
+  title VARCHAR(255),
+  UNIQUE(trip_id,day_date),
+  UNIQUE(trip_id,day_index),
+  CONSTRAINT fk_itinerary_days_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE itinerary_items (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  itinerary_day_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  place_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  item_order INTEGER NOT NULL CHECK (item_order >= 0),
+  category VARCHAR(60) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  planned_start TIME,
+  planned_end TIME,
+  notes TEXT,
+  estimate_minor BIGINT CHECK (estimate_minor >= 0),
+  currency CHAR(3),
+  verification_status VARCHAR(32) NOT NULL DEFAULT 'USER_PLANNED'
+    CHECK (verification_status IN ('USER_PLANNED','AI_SUGGESTED','PROVIDER_LISTED','VERIFIED')),
+  source_ref TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(itinerary_day_id,item_order),
+  CONSTRAINT fk_itinerary_items_itinerary_day_id FOREIGN KEY (itinerary_day_id) REFERENCES itinerary_days(id) ON DELETE CASCADE,
+  CONSTRAINT fk_itinerary_items_place_id FOREIGN KEY (place_id) REFERENCES places(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trip_budget_items (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  category VARCHAR(60) NOT NULL CHECK (category IN ('TRANSPORT','STAY','FOOD','LOCAL_TRAVEL','ACTIVITY','FEES','EMERGENCY_RESERVE','OTHER')),
+  title VARCHAR(255) NOT NULL,
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  currency CHAR(3) NOT NULL,
+  basis VARCHAR(24) NOT NULL DEFAULT 'TOTAL' CHECK (basis IN ('TOTAL','PER_PERSON','PER_NIGHT','PER_UNIT')),
+  price_status VARCHAR(28) NOT NULL DEFAULT 'ESTIMATED'
+    CHECK (price_status IN ('ESTIMATED','PROVIDER_QUOTED','USER_ENTERED','PAID_VERIFIED')),
+  source_ref TEXT,
+  checked_at DATETIME(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_trip_budget_items_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trip_offer_selections (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_offer_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  selection_kind VARCHAR(28) NOT NULL CHECK (selection_kind IN ('SUPPLIER_OFFER','OWN_VEHICLE','OWN_STAY','CUSTOM')),
+  vertical VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  booking_state VARCHAR(32) NOT NULL DEFAULT 'PLANNED'
+    CHECK (booking_state IN ('PLANNED','REDIRECTED_EXTERNAL','MANUAL_REFERENCE_UNVERIFIED','CONFIRMED','CANCELLED')),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_trip_offer_selections_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  CONSTRAINT fk_trip_offer_selections_provider_offer_id FOREIGN KEY (provider_offer_id) REFERENCES provider_offers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE ai_plan_runs (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  requested_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  run_scope VARCHAR(32) NOT NULL CHECK (run_scope IN ('WHOLE_TRIP','SINGLE_DAY')),
+  model_ref VARCHAR(100),
+  status VARCHAR(35) NOT NULL CHECK (status IN ('PENDING','SUCCEEDED','FAILED','VALIDATION_REJECTED')),
+  request_context_hash VARCHAR(128) COLLATE utf8mb4_0900_bin,
+  duration_ms INTEGER,
+  error_code VARCHAR(80),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  completed_at DATETIME(6),
+  CONSTRAINT fk_ai_plan_runs_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ai_plan_runs_requested_by FOREIGN KEY (requested_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE booking_intents (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  offer_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  idempotency_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  capability VARCHAR(40) NOT NULL CHECK (capability IN ('REDIRECT','LIVE_SEARCH_EXTERNAL_CHECKOUT','DIRECT_BOOKING')),
+  status VARCHAR(35) NOT NULL CHECK (status IN ('DRAFT_INTENT','REDIRECTED_EXTERNAL','PENDING','PROCESSING','CONFIRMED','FAILED','UNKNOWN','CANCELLED')),
+  quoted_amount_minor BIGINT CHECK (quoted_amount_minor >= 0),
+  currency CHAR(3),
+  quote_expires_at DATETIME(6),
+  terms_accepted_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(user_id,idempotency_key),
+  CONSTRAINT fk_booking_intents_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_booking_intents_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL,
+  CONSTRAINT fk_booking_intents_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id),
+  CONSTRAINT fk_booking_intents_offer_id FOREIGN KEY (offer_id) REFERENCES provider_offers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE bookings (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_intent_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  provider_booking_ref VARCHAR(180) COLLATE utf8mb4_0900_bin,
+  status VARCHAR(35) NOT NULL CHECK (status IN ('PENDING','PROCESSING','CONFIRMED','FAILED','CANCELLED','UNKNOWN','COMPLETED')),
+  confirmed_at DATETIME(6),
+  provider_evidence_ref TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CHECK (status <> 'CONFIRMED' OR (provider_booking_ref IS NOT NULL AND provider_evidence_ref IS NOT NULL)),
+  CONSTRAINT fk_bookings_booking_intent_id FOREIGN KEY (booking_intent_id) REFERENCES booking_intents(id),
+  CONSTRAINT fk_bookings_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id),
+  CONSTRAINT fk_bookings_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_bookings_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE booking_events (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_event_ref VARCHAR(191) COLLATE utf8mb4_0900_bin,
+  event_type VARCHAR(80) NOT NULL,
+  source VARCHAR(80) NOT NULL,
+  observed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  safe_summary JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  CONSTRAINT fk_booking_events_booking_id FOREIGN KEY (booking_id) REFERENCES bookings(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE payment_attempts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_intent_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  gateway_code VARCHAR(60) NOT NULL,
+  idempotency_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  gateway_payment_ref VARCHAR(180) COLLATE utf8mb4_0900_bin,
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  currency CHAR(3) NOT NULL,
+  status VARCHAR(35) NOT NULL CHECK (status IN ('NOT_STARTED','INITIATED','PENDING','SUCCEEDED','FAILED','UNKNOWN')),
+  verified_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(user_id,idempotency_key),
+  CONSTRAINT fk_payment_attempts_booking_intent_id FOREIGN KEY (booking_intent_id) REFERENCES booking_intents(id),
+  CONSTRAINT fk_payment_attempts_user_id FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE webhook_receipts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  source_code VARCHAR(60) NOT NULL,
+  external_event_id VARCHAR(180) COLLATE utf8mb4_0900_bin NOT NULL,
+  payload_hash VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  signature_valid TINYINT(1) NOT NULL DEFAULT FALSE,
+  processing_status VARCHAR(24) NOT NULL DEFAULT 'RECEIVED'
+    CHECK (processing_status IN ('RECEIVED','PROCESSED','FAILED','IGNORED')),
+  received_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  processed_at DATETIME(6),
+  UNIQUE(source_code,external_event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE notifications (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  category VARCHAR(60) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL,
+  channel VARCHAR(32) NOT NULL DEFAULT 'IN_APP',
+  delivery_status VARCHAR(30) NOT NULL DEFAULT 'PENDING'
+    CHECK (delivery_status IN ('PENDING','SENT','DELIVERED','FAILED','NOT_APPLICABLE')),
+  read_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_notifications_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_notifications_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE support_tickets (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  booking_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  assigned_staff_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  category VARCHAR(60) NOT NULL,
+  subject VARCHAR(200) NOT NULL,
+  description TEXT NOT NULL,
+  status VARCHAR(35) NOT NULL DEFAULT 'OPEN'
+    CHECK (status IN ('OPEN','IN_REVIEW','WAITING_FOR_USER','RESOLVED','CLOSED')),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_support_tickets_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_support_tickets_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL,
+  CONSTRAINT fk_support_tickets_booking_id FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
+  CONSTRAINT fk_support_tickets_assigned_staff_user_id FOREIGN KEY (assigned_staff_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE safety_resources (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  country_code CHAR(2) NOT NULL,
+  region_label VARCHAR(191),
+  resource_type VARCHAR(64) NOT NULL,
+  display_name VARCHAR(150) NOT NULL,
+  phone_number VARCHAR(25),
+  official_url TEXT,
+  source_name VARCHAR(180) NOT NULL,
+  verified_at DATETIME(6),
+  active TINYINT(1) NOT NULL DEFAULT TRUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE user_consents (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  consent_type VARCHAR(80) NOT NULL,
+  document_version VARCHAR(64) NOT NULL,
+  purpose VARCHAR(200),
+  granted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  withdrawn_at DATETIME(6),
+  client_context JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  CONSTRAINT fk_user_consents_user_id FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE audit_logs (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  actor_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  action VARCHAR(100) NOT NULL,
+  object_type VARCHAR(80) NOT NULL,
+  object_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  request_id VARCHAR(120) COLLATE utf8mb4_0900_bin,
+  safe_metadata JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_audit_logs_actor_user_id FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE INDEX saved_travellers_owner_idx ON saved_travellers(owner_user_id);
+
+CREATE INDEX emergency_contacts_owner_idx ON emergency_contacts(owner_user_id);
+
+CREATE INDEX places_destination_cat_idx ON places(destination_id,category);
+
+CREATE INDEX provider_offers_provider_checked_idx ON provider_offers(provider_id,checked_at DESC);
+
+CREATE INDEX trips_owner_updated_idx ON trips(owner_user_id,updated_at DESC);
+
+CREATE INDEX trips_status_start_idx ON trips(status,start_date);
+
+CREATE INDEX itinerary_items_day_idx ON itinerary_items(itinerary_day_id,item_order);
+
+CREATE INDEX trip_budget_items_trip_idx ON trip_budget_items(trip_id);
+
+CREATE INDEX trip_offer_selections_trip_idx ON trip_offer_selections(trip_id);
+
+CREATE INDEX ai_plan_runs_trip_created_idx ON ai_plan_runs(trip_id,created_at DESC);
+
+CREATE INDEX booking_intents_trip_idx ON booking_intents(trip_id);
+
+-- UNIQUE indexes in MySQL permit multiple NULL values; no partial WHERE required.
+CREATE UNIQUE INDEX bookings_supplier_reference_uq ON bookings(provider_id,provider_booking_ref);
+
+CREATE INDEX bookings_user_created_idx ON bookings(user_id,created_at DESC);
+
+CREATE INDEX booking_events_booking_idx ON booking_events(booking_id,observed_at DESC);
+
+CREATE UNIQUE INDEX payment_gateway_ref_uq ON payment_attempts(gateway_code,gateway_payment_ref);
+
+CREATE INDEX notifications_user_created_idx ON notifications(user_id,created_at DESC);
+
+CREATE INDEX support_tickets_owner_status_idx ON support_tickets(user_id,status);
+
+CREATE INDEX user_consents_type_idx ON user_consents(user_id,consent_type,granted_at DESC);
+
+CREATE INDEX audit_logs_object_idx ON audit_logs(object_type,object_id,created_at DESC);
+
+
+
+========== V2__add_otp_records.sql ==========
+-- ============================================================
+-- V2: Add otp_records table for password-reset OTP flow
+-- Author : Backend Team
+-- Applied: Partition 1 / IMP-02
+-- Rules  : Flyway migrations are APPEND-ONLY. Never alter applied files.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS otp_records (
+    id          CHAR(36)     NOT NULL           COMMENT 'Application-generated UUID',
+    email       VARCHAR(254) NOT NULL           COMMENT 'Target email address',
+    otp_hash    VARCHAR(72)  NOT NULL           COMMENT 'BCrypt hash of the 6-digit OTP',
+    purpose     ENUM('PASSWORD_RESET') NOT NULL COMMENT 'OTP use-case discriminator',
+    expires_at  DATETIME(6)  NOT NULL           COMMENT 'UTC expiry timestamp',
+    used        TINYINT(1)   NOT NULL DEFAULT 0 COMMENT 'Consumed flag (single-use)',
+    attempts    TINYINT      NOT NULL DEFAULT 0 COMMENT 'Failed verification count',
+    created_at  DATETIME(6)  NOT NULL           COMMENT 'UTC creation timestamp',
+
+    PRIMARY KEY (id),
+    INDEX idx_otp_email_purpose (email, purpose),
+    INDEX idx_otp_expires_at    (expires_at)
+) ENGINE=InnoDB
+  DEFAULT CHARSET=utf8mb4
+  COLLATE=utf8mb4_0900_ai_ci
+  COMMENT='Single-use OTP records for password reset';
+
+
+
+========== REFERENCE DATABASE SCHEMA ==========
+-- Ghoomi Partition 1 reference schema (MySQL 8.4 LTS / InnoDB).
+-- Generate UUIDs in Java (UUID.randomUUID().toString()); persist as CHAR(36) ASCII BINARY collation.
+-- All DATETIME(6) values are UTC by application contract. Set JDBC connectionTimeZone=UTC and configure UTC session time zone.
+-- Flyway should manage versioned migrations. Run only on a fresh development/staging database after review.
+-- Do not disable FOREIGN_KEY_CHECKS for normal application writes.
+SET time_zone = '+00:00';
+
+CREATE TABLE users (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  email VARCHAR(254) COLLATE utf8mb4_0900_ai_ci NOT NULL UNIQUE,
+  password_hash VARCHAR(255) NOT NULL,
+  email_verified_at DATETIME(6),
+  role VARCHAR(191) NOT NULL DEFAULT 'USER' CHECK (role IN ('USER','SUPPORT','ADMIN','SUPER_ADMIN')),
+  is_active TINYINT(1) NOT NULL DEFAULT TRUE,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE user_profiles (
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  display_name VARCHAR(150) NOT NULL,
+  phone_e164 VARCHAR(20),
+  travel_preferences JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  avatar_object_key TEXT,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_user_profiles_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE saved_travellers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  display_name VARCHAR(150) NOT NULL,
+  age_category VARCHAR(191) CHECK (age_category IN ('CHILD','ADULT','SENIOR','UNSPECIFIED')),
+  notes TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_saved_travellers_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE emergency_contacts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  contact_name VARCHAR(150) NOT NULL,
+  contact_phone_e164 VARCHAR(20) NOT NULL,
+  relationship_label VARCHAR(100),
+  verified_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_emergency_contacts_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE destinations (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  slug VARCHAR(160) NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL,
+  state_region VARCHAR(150),
+  country_code CHAR(2) NOT NULL,
+  latitude DECIMAL(9,6),
+  longitude DECIMAL(9,6),
+  summary TEXT,
+  content_source TEXT,
+  image_license_ref TEXT,
+  active TINYINT(1) NOT NULL DEFAULT TRUE,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE places (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  destination_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  name VARCHAR(200) NOT NULL,
+  category VARCHAR(60) NOT NULL CHECK (category IN ('ATTRACTION','RESTAURANT','ACTIVITY','OTHER')),
+  address_label TEXT,
+  latitude DECIMAL(9,6),
+  longitude DECIMAL(9,6),
+  description TEXT,
+  source_name VARCHAR(180),
+  source_url TEXT,
+  info_verified_at DATETIME(6),
+  opening_hours JSON,
+  estimated_cost_minor BIGINT CHECK (estimated_cost_minor >= 0),
+  currency CHAR(3),
+  active TINYINT(1) NOT NULL DEFAULT TRUE,
+  CONSTRAINT fk_places_destination_id FOREIGN KEY (destination_id) REFERENCES destinations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE providers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  code VARCHAR(80) COLLATE utf8mb4_0900_bin NOT NULL UNIQUE,
+  name VARCHAR(200) NOT NULL,
+  vertical VARCHAR(32) NOT NULL CHECK (vertical IN ('FLIGHT','TRAIN','BUS','CAB','STAY','ACTIVITY','MAP','PAYMENT')),
+  capability VARCHAR(40) NOT NULL DEFAULT 'PLANNING_ONLY'
+    CHECK (capability IN ('PLANNING_ONLY','REDIRECT','LIVE_SEARCH_EXTERNAL_CHECKOUT','DIRECT_BOOKING')),
+  authorization_status VARCHAR(25) NOT NULL DEFAULT 'UNVERIFIED'
+    CHECK (authorization_status IN ('UNVERIFIED','UNDER_REVIEW','APPROVED','SUSPENDED')),
+  credentials_ref VARCHAR(255), -- secret-manager reference only
+  terms_url TEXT,
+  enabled TINYINT(1) NOT NULL DEFAULT FALSE,
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE provider_offers (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_offer_key VARCHAR(160) COLLATE utf8mb4_0900_bin NOT NULL,
+  vertical VARCHAR(32) NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  details JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  origin_label VARCHAR(200),
+  destination_label VARCHAR(200),
+  starts_at DATETIME(6),
+  ends_at DATETIME(6),
+  price_minor BIGINT CHECK (price_minor >= 0),
+  currency CHAR(3),
+  price_basis VARCHAR(24) CHECK (price_basis IN ('PER_PERSON','PER_GROUP','PER_ROOM','TOTAL','UNKNOWN')),
+  data_status VARCHAR(24) NOT NULL CHECK (data_status IN ('VERIFIED_LIVE','PROVIDER_LISTED','ESTIMATED','UNAVAILABLE')),
+  checked_at DATETIME(6) NOT NULL,
+  valid_until DATETIME(6),
+  terms_url TEXT,
+  redirect_url TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(provider_id, provider_offer_key, checked_at),
+  CONSTRAINT fk_provider_offers_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trips (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  owner_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  destination_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  title VARCHAR(255) NOT NULL,
+  origin_label VARCHAR(200) NOT NULL,
+  destination_label VARCHAR(200) NOT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NOT NULL,
+  timezone VARCHAR(64) NOT NULL DEFAULT 'Asia/Kolkata',
+  traveler_count INTEGER NOT NULL CHECK (traveler_count > 0 AND traveler_count <= 50),
+  plan_mode VARCHAR(16) NOT NULL DEFAULT 'BALANCED'
+    CHECK (plan_mode IN ('BUDGET','BALANCED','COMFORT','CUSTOM')),
+  target_budget_minor BIGINT CHECK (target_budget_minor >= 0),
+  currency CHAR(3) NOT NULL DEFAULT 'INR',
+  own_vehicle TINYINT(1) NOT NULL DEFAULT FALSE,
+  already_have_stay TINYINT(1) NOT NULL DEFAULT FALSE,
+  preferences JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  status VARCHAR(35) NOT NULL DEFAULT 'DRAFT'
+    CHECK (status IN ('DRAFT','PLANNED','ACTIVE','COMPLETED','CANCELLED')),
+  version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CHECK (end_date >= start_date),
+  CONSTRAINT fk_trips_owner_user_id FOREIGN KEY (owner_user_id) REFERENCES users(id),
+  CONSTRAINT fk_trips_destination_id FOREIGN KEY (destination_id) REFERENCES destinations(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE itinerary_days (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  day_date DATE NOT NULL,
+  day_index INTEGER NOT NULL CHECK (day_index >= 1),
+  title VARCHAR(255),
+  UNIQUE(trip_id,day_date),
+  UNIQUE(trip_id,day_index),
+  CONSTRAINT fk_itinerary_days_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE itinerary_items (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  itinerary_day_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  place_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  item_order INTEGER NOT NULL CHECK (item_order >= 0),
+  category VARCHAR(60) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  planned_start TIME,
+  planned_end TIME,
+  notes TEXT,
+  estimate_minor BIGINT CHECK (estimate_minor >= 0),
+  currency CHAR(3),
+  verification_status VARCHAR(32) NOT NULL DEFAULT 'USER_PLANNED'
+    CHECK (verification_status IN ('USER_PLANNED','AI_SUGGESTED','PROVIDER_LISTED','VERIFIED')),
+  source_ref TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(itinerary_day_id,item_order),
+  CONSTRAINT fk_itinerary_items_itinerary_day_id FOREIGN KEY (itinerary_day_id) REFERENCES itinerary_days(id) ON DELETE CASCADE,
+  CONSTRAINT fk_itinerary_items_place_id FOREIGN KEY (place_id) REFERENCES places(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trip_budget_items (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  category VARCHAR(60) NOT NULL CHECK (category IN ('TRANSPORT','STAY','FOOD','LOCAL_TRAVEL','ACTIVITY','FEES','EMERGENCY_RESERVE','OTHER')),
+  title VARCHAR(255) NOT NULL,
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  currency CHAR(3) NOT NULL,
+  basis VARCHAR(24) NOT NULL DEFAULT 'TOTAL' CHECK (basis IN ('TOTAL','PER_PERSON','PER_NIGHT','PER_UNIT')),
+  price_status VARCHAR(28) NOT NULL DEFAULT 'ESTIMATED'
+    CHECK (price_status IN ('ESTIMATED','PROVIDER_QUOTED','USER_ENTERED','PAID_VERIFIED')),
+  source_ref TEXT,
+  checked_at DATETIME(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_trip_budget_items_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE trip_offer_selections (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_offer_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  selection_kind VARCHAR(28) NOT NULL CHECK (selection_kind IN ('SUPPLIER_OFFER','OWN_VEHICLE','OWN_STAY','CUSTOM')),
+  vertical VARCHAR(32) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  booking_state VARCHAR(32) NOT NULL DEFAULT 'PLANNED'
+    CHECK (booking_state IN ('PLANNED','REDIRECTED_EXTERNAL','MANUAL_REFERENCE_UNVERIFIED','CONFIRMED','CANCELLED')),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_trip_offer_selections_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  CONSTRAINT fk_trip_offer_selections_provider_offer_id FOREIGN KEY (provider_offer_id) REFERENCES provider_offers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE ai_plan_runs (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  requested_by CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  run_scope VARCHAR(32) NOT NULL CHECK (run_scope IN ('WHOLE_TRIP','SINGLE_DAY')),
+  model_ref VARCHAR(100),
+  status VARCHAR(35) NOT NULL CHECK (status IN ('PENDING','SUCCEEDED','FAILED','VALIDATION_REJECTED')),
+  request_context_hash VARCHAR(128) COLLATE utf8mb4_0900_bin,
+  duration_ms INTEGER,
+  error_code VARCHAR(80),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  completed_at DATETIME(6),
+  CONSTRAINT fk_ai_plan_runs_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  CONSTRAINT fk_ai_plan_runs_requested_by FOREIGN KEY (requested_by) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE booking_intents (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  offer_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  idempotency_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  capability VARCHAR(40) NOT NULL CHECK (capability IN ('REDIRECT','LIVE_SEARCH_EXTERNAL_CHECKOUT','DIRECT_BOOKING')),
+  status VARCHAR(35) NOT NULL CHECK (status IN ('DRAFT_INTENT','REDIRECTED_EXTERNAL','PENDING','PROCESSING','CONFIRMED','FAILED','UNKNOWN','CANCELLED')),
+  quoted_amount_minor BIGINT CHECK (quoted_amount_minor >= 0),
+  currency CHAR(3),
+  quote_expires_at DATETIME(6),
+  terms_accepted_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(user_id,idempotency_key),
+  CONSTRAINT fk_booking_intents_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_booking_intents_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL,
+  CONSTRAINT fk_booking_intents_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id),
+  CONSTRAINT fk_booking_intents_offer_id FOREIGN KEY (offer_id) REFERENCES provider_offers(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE bookings (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_intent_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL UNIQUE,
+  provider_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  provider_booking_ref VARCHAR(180) COLLATE utf8mb4_0900_bin,
+  status VARCHAR(35) NOT NULL CHECK (status IN ('PENDING','PROCESSING','CONFIRMED','FAILED','CANCELLED','UNKNOWN','COMPLETED')),
+  confirmed_at DATETIME(6),
+  provider_evidence_ref TEXT,
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CHECK (status <> 'CONFIRMED' OR (provider_booking_ref IS NOT NULL AND provider_evidence_ref IS NOT NULL)),
+  CONSTRAINT fk_bookings_booking_intent_id FOREIGN KEY (booking_intent_id) REFERENCES booking_intents(id),
+  CONSTRAINT fk_bookings_provider_id FOREIGN KEY (provider_id) REFERENCES providers(id),
+  CONSTRAINT fk_bookings_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_bookings_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE booking_events (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  provider_event_ref VARCHAR(191) COLLATE utf8mb4_0900_bin,
+  event_type VARCHAR(80) NOT NULL,
+  source VARCHAR(80) NOT NULL,
+  observed_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  safe_summary JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  CONSTRAINT fk_booking_events_booking_id FOREIGN KEY (booking_id) REFERENCES bookings(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE payment_attempts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  booking_intent_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  gateway_code VARCHAR(60) NOT NULL,
+  idempotency_key VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  gateway_payment_ref VARCHAR(180) COLLATE utf8mb4_0900_bin,
+  amount_minor BIGINT NOT NULL CHECK (amount_minor >= 0),
+  currency CHAR(3) NOT NULL,
+  status VARCHAR(35) NOT NULL CHECK (status IN ('NOT_STARTED','INITIATED','PENDING','SUCCEEDED','FAILED','UNKNOWN')),
+  verified_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  UNIQUE(user_id,idempotency_key),
+  CONSTRAINT fk_payment_attempts_booking_intent_id FOREIGN KEY (booking_intent_id) REFERENCES booking_intents(id),
+  CONSTRAINT fk_payment_attempts_user_id FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE webhook_receipts (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  source_code VARCHAR(60) NOT NULL,
+  external_event_id VARCHAR(180) COLLATE utf8mb4_0900_bin NOT NULL,
+  payload_hash VARCHAR(128) COLLATE utf8mb4_0900_bin NOT NULL,
+  signature_valid TINYINT(1) NOT NULL DEFAULT FALSE,
+  processing_status VARCHAR(24) NOT NULL DEFAULT 'RECEIVED'
+    CHECK (processing_status IN ('RECEIVED','PROCESSED','FAILED','IGNORED')),
+  received_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  processed_at DATETIME(6),
+  UNIQUE(source_code,external_event_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE notifications (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  category VARCHAR(60) NOT NULL,
+  title VARCHAR(255) NOT NULL,
+  body TEXT NOT NULL,
+  channel VARCHAR(32) NOT NULL DEFAULT 'IN_APP',
+  delivery_status VARCHAR(30) NOT NULL DEFAULT 'PENDING'
+    CHECK (delivery_status IN ('PENDING','SENT','DELIVERED','FAILED','NOT_APPLICABLE')),
+  read_at DATETIME(6),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_notifications_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_notifications_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE support_tickets (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  trip_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  booking_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  assigned_staff_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  category VARCHAR(60) NOT NULL,
+  subject VARCHAR(200) NOT NULL,
+  description TEXT NOT NULL,
+  status VARCHAR(35) NOT NULL DEFAULT 'OPEN'
+    CHECK (status IN ('OPEN','IN_REVIEW','WAITING_FOR_USER','RESOLVED','CLOSED')),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_support_tickets_user_id FOREIGN KEY (user_id) REFERENCES users(id),
+  CONSTRAINT fk_support_tickets_trip_id FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE SET NULL,
+  CONSTRAINT fk_support_tickets_booking_id FOREIGN KEY (booking_id) REFERENCES bookings(id) ON DELETE SET NULL,
+  CONSTRAINT fk_support_tickets_assigned_staff_user_id FOREIGN KEY (assigned_staff_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE safety_resources (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  country_code CHAR(2) NOT NULL,
+  region_label VARCHAR(191),
+  resource_type VARCHAR(64) NOT NULL,
+  display_name VARCHAR(150) NOT NULL,
+  phone_number VARCHAR(25),
+  official_url TEXT,
+  source_name VARCHAR(180) NOT NULL,
+  verified_at DATETIME(6),
+  active TINYINT(1) NOT NULL DEFAULT TRUE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE user_consents (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  consent_type VARCHAR(80) NOT NULL,
+  document_version VARCHAR(64) NOT NULL,
+  purpose VARCHAR(200),
+  granted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  withdrawn_at DATETIME(6),
+  client_context JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  CONSTRAINT fk_user_consents_user_id FOREIGN KEY (user_id) REFERENCES users(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE audit_logs (
+  id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+  actor_user_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  action VARCHAR(100) NOT NULL,
+  object_type VARCHAR(80) NOT NULL,
+  object_id CHAR(36) CHARACTER SET ascii COLLATE ascii_bin,
+  request_id VARCHAR(120) COLLATE utf8mb4_0900_bin,
+  safe_metadata JSON NOT NULL DEFAULT (JSON_OBJECT()),
+  created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  CONSTRAINT fk_audit_logs_actor_user_id FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE INDEX saved_travellers_owner_idx ON saved_travellers(owner_user_id);
+
+CREATE INDEX emergency_contacts_owner_idx ON emergency_contacts(owner_user_id);
+
+CREATE INDEX places_destination_cat_idx ON places(destination_id,category);
+
+CREATE INDEX provider_offers_provider_checked_idx ON provider_offers(provider_id,checked_at DESC);
+
+CREATE INDEX trips_owner_updated_idx ON trips(owner_user_id,updated_at DESC);
+
+CREATE INDEX trips_status_start_idx ON trips(status,start_date);
+
+CREATE INDEX itinerary_items_day_idx ON itinerary_items(itinerary_day_id,item_order);
+
+CREATE INDEX trip_budget_items_trip_idx ON trip_budget_items(trip_id);
+
+CREATE INDEX trip_offer_selections_trip_idx ON trip_offer_selections(trip_id);
+
+CREATE INDEX ai_plan_runs_trip_created_idx ON ai_plan_runs(trip_id,created_at DESC);
+
+CREATE INDEX booking_intents_trip_idx ON booking_intents(trip_id);
+
+-- UNIQUE indexes in MySQL permit multiple NULL values; no partial WHERE required.
+CREATE UNIQUE INDEX bookings_supplier_reference_uq ON bookings(provider_id,provider_booking_ref);
+
+CREATE INDEX bookings_user_created_idx ON bookings(user_id,created_at DESC);
+
+CREATE INDEX booking_events_booking_idx ON booking_events(booking_id,observed_at DESC);
+
+CREATE UNIQUE INDEX payment_gateway_ref_uq ON payment_attempts(gateway_code,gateway_payment_ref);
+
+CREATE INDEX notifications_user_created_idx ON notifications(user_id,created_at DESC);
+
+CREATE INDEX support_tickets_owner_status_idx ON support_tickets(user_id,status);
+
+CREATE INDEX user_consents_type_idx ON user_consents(user_id,consent_type,granted_at DESC);
+
+CREATE INDEX audit_logs_object_idx ON audit_logs(object_type,object_id,created_at DESC);
