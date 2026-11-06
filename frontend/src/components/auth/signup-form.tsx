@@ -1,29 +1,10 @@
 
 'use client'
 
-import {
-  Lock,
-  Phone,
-  ShieldCheck,
-  User,
-  Building2,
-  MapPin,
-} from 'lucide-react'
-
-import {
-  useId,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from 'react'
-
+import { Building2, Lock, MapPin, Phone, ShieldCheck, User } from 'lucide-react'
+import { useId, useState, type CSSProperties, type FormEvent } from 'react'
 import { AuthField } from './auth-field'
-import {
-  CATEGORIES,
-  CategoryPicker,
-  type CategoryId,
-} from './category-picker'
-
+import { CATEGORIES, CategoryPicker, type CategoryId } from './category-picker'
 import {
   Collapsible,
   Divider,
@@ -35,7 +16,6 @@ import {
   PrimaryButton,
   staggerStyle,
 } from './form-parts'
-
 import { PasswordStrength } from './password-strength'
 import { RoleSelector, type Role } from './role-selector'
 import { useFormState } from './use-form-state'
@@ -43,55 +23,41 @@ import { passwordError } from './validation'
 import { authApi } from '@/services/auth-api'
 
 const FIELDS = ['name', 'phone', 'password', 'confirm'] as const
-
 type Values = Record<(typeof FIELDS)[number], string>
+type AdminStep = 'category' | 'account' | 'business'
+type SlideDirection = 'forward' | 'back'
 
 function validate(values: Values) {
   const errors: Partial<Values> = {}
 
-  if (!values.name.trim()) {
-    errors.name = 'Name is required'
-  }
+  if (!values.name.trim()) errors.name = 'Name is required'
 
   const phone = values.phone.trim()
-
-  if (!phone) {
-    errors.phone = 'Phone number is required'
-  } else if (!/^[6-9]\d{9}$/.test(phone)) {
+  if (!phone) errors.phone = 'Phone number is required'
+  else if (!/^[6-9]\d{9}$/.test(phone)) {
     errors.phone = 'Enter a valid 10-digit phone number'
   }
 
   errors.password = passwordError(values.password)
 
-  if (!values.confirm) {
-    errors.confirm = 'Confirm password is required'
-  } else if (values.confirm !== values.password) {
+  if (!values.confirm) errors.confirm = 'Confirm password is required'
+  else if (values.confirm !== values.password) {
     errors.confirm = 'Passwords do not match'
   }
 
   return errors
 }
 
-// Dynamic fields according to selected business category.
 function getBusinessFields(category: CategoryId) {
   if (category === 'hotels') {
-    return {
-      name: 'Hotel / Property Name',
-      type: 'Property Type',
-    }
+    return { name: 'Hotel / Property Name', type: 'Property Type' }
   }
 
   if (category === 'restaurants') {
-    return {
-      name: 'Restaurant Name',
-      type: 'Cuisine Type',
-    }
+    return { name: 'Restaurant Name', type: 'Cuisine Type' }
   }
 
-  return {
-    name: 'Tour Company Name',
-    type: 'Tour Service Type',
-  }
+  return { name: 'Tour Company Name', type: 'Tour Service Type' }
 }
 
 export function SignupForm({
@@ -104,16 +70,10 @@ export function SignupForm({
   className?: string
 }) {
   const [role, setRole] = useState<Role>('user')
-
-  // A — Two-step Admin registration
-  const [adminStep, setAdminStep] = useState<
-    'category' | 'details'
-  >('category')
-
+  const [adminStep, setAdminStep] = useState<AdminStep>('category')
+  const [slideDirection, setSlideDirection] = useState<SlideDirection>('forward')
   const [categories, setCategories] = useState<CategoryId[]>([])
-  const [categoriesTouched, setCategoriesTouched] = useState(false)
 
-  // A — Business-specific information
   const [businessName, setBusinessName] = useState('')
   const [businessType, setBusinessType] = useState('')
   const [businessCity, setBusinessCity] = useState('')
@@ -130,77 +90,81 @@ export function SignupForm({
 
   const strengthId = useId()
   const s = (i: number) => staggerStyle(i, -1)
-
   const isAdmin = role === 'admin'
   const selectedCategory = categories[0] ?? null
+  const fields = selectedCategory ? getBusinessFields(selectedCategory) : null
+  const categoryTitle = CATEGORIES.find(
+    (category) => category.id === selectedCategory
+  )?.title
 
-  const businessFields = selectedCategory
-    ? getBusinessFields(selectedCategory)
-    : null
+  const animationClass =
+    slideDirection === 'back' ? 'admin-step-back' : 'admin-step-forward'
 
-  const categoryError =
-    isAdmin &&
-    categoriesTouched &&
-    categories.length === 0
-      ? 'Please select a business category'
-      : undefined
+  const swapDir = {
+    ['--dir' as string]: isAdmin ? 1 : -1,
+  } as CSSProperties
 
-  // B — Reset Admin flow when switching roles.
   const changeRole = (next: Role) => {
-    if (next === role) return
+    if (next === role || pending) return
 
     setRole(next)
     setAdminStep('category')
+    setSlideDirection('forward')
     setStatus(null)
     setError(null)
   }
 
-  // B — Select only one business category.
-  const toggleCategory = (id: CategoryId) => {
+  // Selecting a business category automatically opens account details.
+  const chooseCategory = (id: CategoryId) => {
     setCategories([id])
-    setCategoriesTouched(true)
-
     setBusinessName('')
     setBusinessType('')
     setBusinessCity('')
     setError(null)
+    setSlideDirection('forward')
+    setAdminStep('account')
   }
 
-  const handleSubmit = async (
-    event: FormEvent<HTMLFormElement>
-  ) => {
-    event.preventDefault()
-
-    const element = event.currentTarget
-
-    setStatus(null)
+  const previousStep = (step: AdminStep) => {
     setError(null)
+    setStatus(null)
+    setSlideDirection('back')
+    setAdminStep(step)
+  }
 
-    const fieldsValid = form.submit()
+  const continueToBusiness = () => {
+    setError(null)
+    setStatus(null)
 
-    if (isAdmin) {
-      setCategoriesTouched(true)
-    }
+    if (!form.submit()) return
 
-    if (
-      !fieldsValid ||
-      (isAdmin && categories.length === 0)
-    ) {
-      requestAnimationFrame(() =>
-        element
-          .querySelector<HTMLElement>('[aria-invalid="true"]')
-          ?.focus()
-      )
+    setSlideDirection('forward')
+    setAdminStep('business')
+  }
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (pending) return
+
+    setError(null)
+    setStatus(null)
+
+    if (isAdmin && (adminStep !== 'business' || !selectedCategory)) {
+      setError('Please choose a business category before registering.')
       return
     }
 
-    // G — Validate category-specific fields.
+    if (!form.submit()) {
+      if (isAdmin) {
+        setSlideDirection('back')
+        setAdminStep('account')
+      }
+      return
+    }
+
     if (
       isAdmin &&
-      (!selectedCategory ||
-        !businessName.trim() ||
-        !businessType.trim() ||
-        !businessCity.trim())
+      (!businessName.trim() || !businessType.trim() || !businessCity.trim())
     ) {
       setError('Please complete all business details.')
       return
@@ -209,17 +173,13 @@ export function SignupForm({
     setPending(true)
 
     try {
-      // Public registration never grants admin privileges.
-      // Business applications require backend approval.
-
-      // H — Send selected category and business details.
+      // Business registration creates a partner application.
+      // It does not grant privileged administrator permissions.
       await authApi.register({
         name: form.values.name.trim(),
         phone: `+91${form.values.phone.trim()}`,
         password: form.values.password,
-        accountType: isAdmin
-          ? 'partner_application'
-          : 'traveller',
+        accountType: isAdmin ? 'partner_application' : 'traveller',
 
         ...(isAdmin
           ? {
@@ -239,17 +199,15 @@ export function SignupForm({
           : 'Your account registration was accepted by the server.'
       )
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? e.message
-          : 'Unable to create account.'
-      )
+      setError(e instanceof Error ? e.message : 'Unable to create account.')
     } finally {
       setPending(false)
     }
   }
 
   const handleGoogle = async () => {
+    if (pending) return
+
     setPending(true)
     setError(null)
 
@@ -265,14 +223,9 @@ export function SignupForm({
     }
   }
 
-  const swapDir = {
-    ['--dir' as string]: isAdmin ? 1 : -1,
-  } as CSSProperties
-
   return (
     <FormShell active={active} className={className}>
-      {/* Existing heading */}
-      <div className="mb-5 flex flex-col gap-2">
+      <div className="mb-4 flex flex-col gap-2">
         <h2
           className="stagger-item font-display text-3xl font-bold text-foreground"
           style={s(0)}
@@ -293,117 +246,114 @@ export function SignupForm({
         </div>
       </div>
 
-      {/* Existing User / Admin selector */}
       <div className="stagger-item mb-3" style={s(2)}>
         <RoleSelector value={role} onChange={changeRole} />
       </div>
 
-      {/* C — Show business categories FIRST */}
+      {/* STEP 1 — BUSINESS CATEGORY */}
       {isAdmin && adminStep === 'category' && (
-      <div
-      className="stagger-item mt-5 space-y-5"
-      style={s(3)}
-      >
-          <CategoryPicker
-            selected={categories}
-            onToggle={toggleCategory}
-            error={categoryError}
-          />
-
-          <button
-            type="button"
-            disabled={!selectedCategory}
-            onClick={() => setAdminStep('details')}
-            className="h-11 w-full rounded-full bg-primary font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            Continue
-          </button>
+        <div className="stagger-item" style={s(3)}>
+          <div key="category" className={`${animationClass} space-y-3`}>
+            <p className="text-xs font-medium text-primary">
+              Step 1 of 3 · Choose a business category
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Select Hotels, Restaurants, or Tours to continue.
+            </p>
+            <CategoryPicker
+              selected={categories}
+              onToggle={chooseCategory}
+            />
+          </div>
         </div>
       )}
 
-      {/* D — Show User form immediately.
-          Show Admin form AFTER category selection. */}
-      {(!isAdmin || adminStep === 'details') && (
+      {(!isAdmin || adminStep !== 'category') && (
         <form
           noValidate
           onSubmit={handleSubmit}
-          className="flex flex-col gap-3"
+          className="stagger-item flex flex-col gap-3"
+          style={s(3)}
         >
-          <AuthField
-            className="stagger-item"
-            style={s(3)}
-            {...form.field('name')}
-            label="Name"
-            icon={User}
-            autoComplete="name"
-          />
-
-          <AuthField
-            className="stagger-item"
-            style={s(4)}
-            {...form.field('phone')}
-            type="tel"
-            label="Phone Number"
-            icon={Phone}
-            autoComplete="tel"
-          />
-
-          <div className="stagger-item" style={s(5)}>
-            <AuthField
-              {...form.field('password')}
-              onFocus={() => setPasswordFocused(true)}
-              onBlur={() => {
-                setPasswordFocused(false)
-                form.field('password').onBlur()
-              }}
-              aria-describedby={strengthId}
-              type="password"
-              label="Password"
-              icon={Lock}
-              autoComplete="new-password"
-            />
-
-            <Collapsible
-              open={
-                passwordFocused ||
-                form.values.password.length > 0
-              }
+          {/* USER SIGNUP / ADMIN STEP 2 */}
+          {(!isAdmin || adminStep === 'account') && (
+            <div
+              key="account"
+              className={`${isAdmin ? animationClass : ''} space-y-3`}
             >
-              <PasswordStrength
-                id={strengthId}
-                password={form.values.password}
-                className="pt-3"
+              {isAdmin && (
+                <p className="text-xs font-medium text-primary">
+                  Step 2 of 3 · {categoryTitle} · Account details
+                </p>
+              )}
+
+              <AuthField
+                className="stagger-item"
+                style={s(3)}
+                {...form.field('name')}
+                label="Name"
+                icon={User}
+                autoComplete="name"
               />
-            </Collapsible>
-          </div>
 
-          <div className="stagger-item" style={s(6)}>
-            <AuthField
-              {...form.field('confirm')}
-              type="password"
-              label="Confirm Password"
-              icon={ShieldCheck}
-              autoComplete="new-password"
-            />
-          </div>
+              <AuthField
+                className="stagger-item"
+                style={s(4)}
+                {...form.field('phone')}
+                type="tel"
+                label="Phone Number"
+                icon={Phone}
+                autoComplete="tel"
+              />
 
-          {/* E — Old category section removed from here. */}
+              <div className="stagger-item" style={s(5)}>
+                <AuthField
+                  {...form.field('password')}
+                  onFocus={() => setPasswordFocused(true)}
+                  onBlur={() => {
+                    setPasswordFocused(false)
+                    form.field('password').onBlur()
+                  }}
+                  aria-describedby={strengthId}
+                  type="password"
+                  label="Password"
+                  icon={Lock}
+                  autoComplete="new-password"
+                />
 
-          {/* F — Category-specific business fields */}
-          {isAdmin && selectedCategory && businessFields && (
-            <div className="stagger-item space-y-2">
-              <p className="pt-3 text-sm font-semibold text-foreground">
-                {
-                  CATEGORIES.find(
-                    (c) => c.id === selectedCategory
-                  )?.title
-                }{' '}
-                Business Details
+                <Collapsible
+                  open={passwordFocused || form.values.password.length > 0}
+                >
+                  <PasswordStrength
+                    id={strengthId}
+                    password={form.values.password}
+                    className="pt-2"
+                  />
+                </Collapsible>
+              </div>
+
+              <AuthField
+                className="stagger-item"
+                style={s(6)}
+                {...form.field('confirm')}
+                type="password"
+                label="Confirm Password"
+                icon={ShieldCheck}
+                autoComplete="new-password"
+              />
+            </div>
+          )}
+
+          {/* ADMIN STEP 3 — BUSINESS DETAILS */}
+          {isAdmin && adminStep === 'business' && selectedCategory && fields && (
+            <div key="business" className={`${animationClass} space-y-3`}>
+              <p className="text-xs font-medium text-primary">
+                Step 3 of 3 · {categoryTitle} · Business details
               </p>
 
               <AuthField
                 name="businessName"
-                label={businessFields.name}
+                label={fields.name}
                 icon={Building2}
                 value={businessName}
                 required
@@ -415,7 +365,7 @@ export function SignupForm({
 
               <AuthField
                 name="businessType"
-                label={businessFields.type}
+                label={fields.type}
                 icon={Building2}
                 value={businessType}
                 required
@@ -431,6 +381,7 @@ export function SignupForm({
                 icon={MapPin}
                 value={businessCity}
                 required
+                autoComplete="address-level2"
                 onChange={(e) => {
                   setBusinessCity(e.target.value)
                   setError(null)
@@ -439,58 +390,72 @@ export function SignupForm({
 
               <button
                 type="button"
-                onClick={() => setAdminStep('category')}
-                className="mt-2 text-sm font-medium text-primary hover:underline"
+                onClick={() => previousStep('account')}
+                className="text-sm font-medium text-primary hover:underline"
               >
-                Change Business Category
+                Back to Account Details
               </button>
             </div>
           )}
 
-          {/* Existing buttons */}
-          <div className="mt-3 flex flex-col gap-3">
-            <div className="stagger-item" style={s(7)}>
-              <PrimaryButton loading={pending}>
-                Create Account
-              </PrimaryButton>
-            </div>
+          {/* WIZARD NAVIGATION */}
+          {isAdmin && adminStep === 'account' ? (
+            <div className="flex flex-col gap-2 pt-2">
+              <button
+                type="button"
+                onClick={continueToBusiness}
+                className="h-11 w-full rounded-full bg-primary text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+              >
+                Continue to Business Details
+              </button>
 
-            <div className="stagger-item" style={s(8)}>
-              <Divider />
+              <button
+                type="button"
+                onClick={() => previousStep('category')}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Back to Categories
+              </button>
             </div>
+          ) : (
+            <div className="mt-2 flex flex-col gap-3">
+              <div className="stagger-item" style={s(7)}>
+                <PrimaryButton loading={pending}>
+                  Create Account
+                </PrimaryButton>
+              </div>
 
-            <div className="stagger-item" style={s(9)}>
-              <GoogleButton
-                disabled={pending}
-                onClick={handleGoogle}
-              />
-            </div>
+              <div className="stagger-item" style={s(8)}>
+                <Divider />
+              </div>
 
-            <div className="stagger-item" style={s(10)}>
-              <EmailButton
-                onClick={() =>
-                  document
-                    .querySelector<HTMLInputElement>(
-                      'input[name="email"]'
-                    )
-                    ?.focus()
-                }
-              />
+              <div className="stagger-item" style={s(9)}>
+                <GoogleButton
+                  disabled={pending}
+                  onClick={handleGoogle}
+                />
+              </div>
+
+              <div className="stagger-item" style={s(10)}>
+                <EmailButton
+                  onClick={() => {
+                    setError('Email registration has not been configured yet.')
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           <FormAlert message={error} />
           <FormStatus message={status} />
         </form>
       )}
 
-      {/* Existing Login navigation */}
       <p
-        className="stagger-item mt-1 text-center text-sm text-muted-foreground"
+        className="stagger-item mt-2 text-center text-sm text-muted-foreground"
         style={s(11)}
       >
         {'Already have an account? '}
-
         <button
           type="button"
           onClick={onSwitch}
