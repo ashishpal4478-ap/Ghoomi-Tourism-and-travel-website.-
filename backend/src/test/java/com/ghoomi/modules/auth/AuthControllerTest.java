@@ -4,22 +4,32 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ghoomi.modules.auth.dto.*;
 import com.ghoomi.modules.user.User;
 import com.ghoomi.modules.user.UserRepository;
+import jakarta.mail.Session;
+import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mail.MailSendException;
+import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -45,6 +55,9 @@ class AuthControllerTest {
     @Autowired
     private OtpRecordRepository otpRecordRepository;
 
+    @MockitoBean
+    private JavaMailSender mailSender;
+
     private static final String TEST_EMAIL = "authtest_runner@example.com";
     private static final String TEST_PASSWORD = "StrongPassword123!";
 
@@ -52,6 +65,9 @@ class AuthControllerTest {
     void setup() {
         otpRecordRepository.deleteAllByEmailAndPurpose(TEST_EMAIL, OtpPurpose.PASSWORD_RESET);
         userRepository.findByEmail(TEST_EMAIL).ifPresent(userRepository::delete);
+
+        Session session = Session.getInstance(new Properties());
+        Mockito.when(mailSender.createMimeMessage()).thenReturn(new MimeMessage(session));
     }
 
     @Test
@@ -233,6 +249,96 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.email").value(TEST_EMAIL));
+
+        // 9. Verify OTP email delivery was invoked
+        verify(mailSender, atLeastOnce()).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void forgotPassword_smtpFailure_doesNotPersistOtpAndReturns503() throws Exception {
+        // Register user
+        RegisterRequest register = new RegisterRequest();
+        register.setName("SMTP Fail User");
+        register.setEmail(TEST_EMAIL);
+        register.setPassword(TEST_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(register)))
+                .andExpect(status().isCreated());
+
+        // Configure JavaMailSender to simulate SMTP connection timeout
+        doThrow(new MailSendException("SMTP server connection timeout: smtp.gmail.com:587"))
+                .when(mailSender).send(any(MimeMessage.class));
+
+        // Request forgot-password
+        ForgotPasswordRequest forgotReq = new ForgotPasswordRequest(TEST_EMAIL);
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forgotReq)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("Unable to send verification email. Please check your connection or try again shortly."));
+
+        // Crucial security invariant: no OTP record should be saved in DB when delivery fails!
+        assertEquals(0, otpRecordRepository.countByEmailAndPurpose(TEST_EMAIL, OtpPurpose.PASSWORD_RESET),
+                "No OTP record should be saved when outbound email dispatch fails");
+    }
+
+    @Test
+    void forgotPassword_antiEnumeration_unknownUser_doesNotInvokeMailSender() throws Exception {
+        String nonExistentEmail = "completely_unknown_user_12345@example.com";
+
+        ForgotPasswordRequest forgotReq = new ForgotPasswordRequest(nonExistentEmail);
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forgotReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.message").value("If your email address is registered, a 6-digit verification code has been dispatched."));
+
+        // Must never invoke mailSender for an unregistered address
+        verify(mailSender, never()).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void forgotPassword_cooldownPreserved_preventsSpam() throws Exception {
+        RegisterRequest register = new RegisterRequest();
+        register.setName("Cooldown User");
+        register.setEmail(TEST_EMAIL);
+        register.setPassword(TEST_PASSWORD);
+
+        mockMvc.perform(post("/api/v1/auth/register")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(register)))
+                .andExpect(status().isCreated());
+
+        // 1st request -> dispatches email
+        ForgotPasswordRequest forgotReq = new ForgotPasswordRequest(TEST_EMAIL);
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forgotReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
+
+        // 2nd request immediately -> within 60-second cooldown
+        mockMvc.perform(post("/api/v1/auth/password/forgot")
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(forgotReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.retryAfterSeconds").isNumber());
+
+        // mailSender must still only have been called once!
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
     }
 }
 

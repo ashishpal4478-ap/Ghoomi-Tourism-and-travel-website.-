@@ -77,7 +77,7 @@ No external provider authorization has been verified in this documentation-gener
 | Maps/places | Unverified | Unverified | Not run | Curated content / limited mode | Verify data and photo licensing |
 | AI planner | Unverified | Unverified | Not run | Manual fallback until approved | Select provider and budget |
 | Payment gateway | Unverified | Unverified | Not run | Disabled | Validate account/terms/compliance |
-| Email/SMS | Unverified | Unverified | Not run | UI/in-app only until approved | Select provider |
+| Email/SMS | Unverified | JavaMailSender (SMTP) | Mocked in automated suite (pass) | SMTP configured via env vars (MAIL_HOST, etc.) | Real inbox delivery pending live SMTP credentials |
 
 **Important:** `PLANNING_ONLY` is a safe status placeholder, not evidence the relevant planning data already exists. For a booking-focused public launch, obtain at least one credible authorized supplier next action; otherwise label the release a **planning/discovery beta**.
 
@@ -279,8 +279,43 @@ See `memory.md` ADR-001 to ADR-009. None of the proposed architecture/design cho
     - `GhoomiApplicationTests` (1 test): Spring Boot context load.
   - `npm run build` (Next.js 16.4.3 --webpack) -> **BUILD SUCCESS** in 6.1s, TypeScript in 4.6s, 8/8 static routes generated (`/`, `/_not-found`, `/forgot-password`, `/login`, `/reset-password`, `/signup`, `/verify-otp`), exit code 0.
 - **Known Limitations & Next Actions:**
-  - **Email Delivery:** OTP is currently logged to console in dev mode (`AuthService.forgotPassword()`). Real SMTP/email provider (`spring-boot-starter-mail` or SendGrid/SES) is NOT yet configured; production email delivery remains a pending operational requirement before public release.
+  - **Email Delivery:** Real SMTP integration implemented via `JavaMailSender` and environment variables. Automated mock test suite verifies full lifecycle, MIME composition, security invariants, and failure handling. Actual inbox delivery remains unverified until live credentials are provided.
 - **Next authorized slice:** Frontend integration of Destination Catalog / Trip Planning UI with live backend endpoints.
+
+### 2026-11-10 — Real Email Delivery Implementation (JavaMailSender / SMTP)
+- **Branch:** `integration/rehan-backend`
+- **Current Objective:** Implement real outbound SMTP email delivery for Ghoomi password recovery lifecycle using Spring Boot Mail and `JavaMailSender`.
+- **Implemented:**
+  - [x] Dependency: Added `spring-boot-starter-mail` to `backend/pom.xml`.
+  - [x] Configuration: Added `spring.mail` and `app.mail.from` properties in `application.yml` mapped to standard environment variables:
+    - `MAIL_HOST` (default `localhost`)
+    - `MAIL_PORT` (default `587`)
+    - `MAIL_USERNAME`
+    - `MAIL_PASSWORD`
+    - `MAIL_FROM` (default `noreply@ghoomi.com`)
+    - `MAIL_SMTP_AUTH` (default `true`)
+    - `MAIL_SMTP_STARTTLS` (default `true`)
+  - [x] Documentation: Added full documentation and placeholders for all 7 variables to `backend/.env.example`.
+  - [x] `EmailService.java` (`com.ghoomi.common.email`):
+    - Composes `MimeMessage` with multipart/alternative structure (rich responsive HTML template + plain-text fallback).
+    - Clear 10-minute expiration notice and prominent security warning ("Never share this verification code with anyone").
+    - Masks recipient email addresses in logs (`m***l@example.com`) and strictly excludes OTP / credentials from all log outputs.
+  - [x] Exception Handling & Resilience (`EmailDeliveryException.java`, `GlobalExceptionHandler.java`):
+    - Catches `MailException` / `MessagingException` and returns generic HTTP 503 (`Unable to send verification email. Please check your connection or try again shortly.`).
+    - Internal SMTP stack traces, hosts, ports, and socket timeouts are never exposed in API responses.
+    - If email delivery fails, the `OtpRecord` is NOT saved to the database, preventing invalid/unreachable OTPs and preserving retry capabilities without locking users in cooldown.
+  - [x] Anti-Enumeration & Cooldown:
+    - Non-existent emails receive generic success response without invoking `mailSender`.
+    - 60-second cooldown per email is enforced and does not re-invoke `mailSender`.
+  - [x] Automated Tests:
+    - `EmailServiceTest.java`: 2 unit tests covering MIME generation, recipient/subject/sender verification, multipart alternative plain-text + HTML body content, and SMTP timeout exception translation.
+    - `AuthControllerTest.java`: 7 integration tests covering registration, login, `/auth/me`, full password recovery lifecycle with email dispatch, SMTP 503 failure handling without OTP persistence, anti-enumeration without email dispatch, and cooldown preservation.
+- **Verification:**
+  - `mvn test -DDB_PASSWORD="..."` -> **BUILD SUCCESS** in 30.840s (**Tests run: 30, Failures: 0, Errors: 0, Skipped: 0**).
+  - `npm run build` (Next.js 16.4.3 --webpack) -> **BUILD SUCCESS** in 6.1s, TypeScript in 4.7s, 8/8 static routes generated, exit code 0.
+- **Inbox Delivery Status:**
+  - Automated tests pass with 100% assertion coverage using mocked `JavaMailSender`.
+  - **Actual live inbox delivery remains UNVERIFIED** until a developer or administrator exports live SMTP credentials (`MAIL_HOST`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`) and initiates password recovery to an external inbox.
 
 ### Copy/paste entry for future sessions
 

@@ -22,6 +22,8 @@ public interface OtpRecordRepository extends JpaRepository<OtpRecord, String> {
     Optional<OtpRecord> findTopByEmailAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
             String email, OtpPurpose purpose, LocalDateTime now);
 
+    long countByEmailAndPurpose(String email, OtpPurpose purpose);
+
     /**
      * Delete all OTP records for an email+purpose pair — called after a
      * successful reset to leave no dangling records.

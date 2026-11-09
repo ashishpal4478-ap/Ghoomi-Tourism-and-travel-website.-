@@ -51,18 +51,21 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final OtpRecordRepository otpRecordRepository;
+    private final com.ghoomi.common.email.EmailService emailService;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(UserRepository userRepository,
                        UserProfileRepository userProfileRepository,
                        PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager,
-                       OtpRecordRepository otpRecordRepository) {
+                       OtpRecordRepository otpRecordRepository,
+                       com.ghoomi.common.email.EmailService emailService) {
         this.userRepository = userRepository;
         this.userProfileRepository = userProfileRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.otpRecordRepository = otpRecordRepository;
+        this.emailService = emailService;
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -321,11 +324,13 @@ public class AuthService {
         String otpHash = passwordEncoder.encode(otp);
         LocalDateTime expiresAt = now.plusMinutes(10);
 
+        // Dispatch real email before persisting OTP: if dispatch fails, do NOT persist unreachable OTP
+        emailService.sendPasswordResetOtp(email, otp, 10);
+
         OtpRecord record = new OtpRecord(email, otpHash, OtpPurpose.PASSWORD_RESET, expiresAt);
         otpRecordRepository.save(record);
 
-        // In dev / test / local environment log the code for operational verification
-        log.info("[AUTH] PASSWORD_RESET verification code generated for {}: {}", email, otp);
+        log.info("[AUTH] PASSWORD_RESET verification code generated and dispatched for email={}", maskEmail(email));
 
         return new ForgotPasswordResponse(
                 "If your email address is registered, a 6-digit verification code has been dispatched.",
@@ -415,6 +420,15 @@ public class AuthService {
 
     private boolean isBlank(String s) {
         return s == null || s.isBlank();
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || !email.contains("@")) return "***";
+        int at = email.indexOf('@');
+        String name = email.substring(0, at);
+        String domain = email.substring(at);
+        if (name.length() <= 2) return name.charAt(0) + "***" + domain;
+        return name.charAt(0) + "***" + name.charAt(name.length() - 1) + domain;
     }
 }
 
