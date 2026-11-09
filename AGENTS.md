@@ -26,6 +26,44 @@
 - **Not in first deployment (Partition 2):** expanded direct booking and cancellation/refunds, full group roles/collaboration, consent-based family monitoring, live tracking, secure booking-documents workspace, advanced partner/admin operations.
 - **Long-term (Partition 3):** automated intelligent recovery, Back-to-Home, SOS workflow, advanced assistant, expense splitting, offline wallet, public trips/community, partner marketplace, premium plans.
 
+## Permanent Git Workflow & Quality Protocol
+
+### Branch Protection & Authorization
+- **Working Branch:** `integration/rehan-backend`
+- **Main Branch (`main`):** PROTECTED.
+  - Never push directly to `main`.
+  - Never merge into `main` without explicit approval.
+  - Never delete remote branches.
+  - Never rewrite Git history.
+  - Never force push (`--force` or `+branch`).
+- **Authorization:** Only completed, tested work may be committed and pushed to `integration/rehan-backend`.
+
+### Pre-Implementation Checklist
+1. Run `git status` to verify working tree.
+2. Confirm active branch is `integration/rehan-backend`.
+3. Fetch latest GitHub changes (`git fetch origin`).
+4. Check whether local branch is ahead or behind.
+5. Preserve uncommitted changes safely (stash or targeted work); never use destructive commands like `git reset --hard` or `git clean -fd`.
+6. Never blindly merge `main` into working branch. Explain conflicts carefully if any occur.
+
+### Post-Implementation Verification & Commit Protocol
+1. **Backend Tests:** Run full test suite with active database: `mvn test -DDB_PASSWORD="..."`. All tests must pass (100%).
+2. **Frontend Build:** Run `npm run build` or `npx tsc --noEmit` to verify type safety and compilation.
+3. **Secret Leak Prevention:** Inspect `git status` and `git diff`. Verify NO `.env`, credentials, secrets, database dumps, logs, or build artifacts (`target/`, `.next/`) are staged.
+4. **Targeted Staging:** Stage only explicit, intended source and config files.
+5. **Descriptive Commit:** Write conventional, clear commit message documenting scope and tests.
+6. **Push:** Push cleanly to `integration/rehan-backend`. If browser OAuth/credential helper prompt appears, request user authentication.
+
+### Anti-Crash & Duplicate Prevention Protocol
+Before adding code or dependencies:
+- **Duplicate Classes:** Check if an equivalent Java class exists in `backend/src/main/java/com/ghoomi/`.
+- **Duplicate Components:** Check if an equivalent React component exists in `frontend/src/`.
+- **Duplicate API Endpoints:** Check existing controllers before creating new mapping annotations.
+- **Duplicate Migrations:** Check all applied Flyway migrations. Never edit V1 or V2; only add incremented migration files when strictly necessary.
+- **Database Safety:** NEVER DROP, TRUNCATE, or reset the database. Preserve user data and historical records.
+- **Port Conflicts:** Ensure backend uses 8080 and frontend uses 3000.
+- **Dependencies:** Inspect `pom.xml` and `package.json` before adding any new library.
+
 ## First instruction to an agent
 
 > Read `AGENTS.md`, `rules.md`, `memory.md`, and `tracker.md`; inspect the existing code without modifying it. Then propose the smallest approved Partition 1 implementation slice with related PRD/flow/API/schema IDs, a test plan and any provider blockers. Implement it after the task is clear, and update the tracker only with verified results.

@@ -1,7 +1,7 @@
 'use client'
 import { AtSign, Lock } from 'lucide-react'
 import Link from 'next/link'
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { AuthField } from './auth-field'
 import { Checkbox, Divider, EmailButton, FormAlert, FormShell, FormStatus, GoogleButton, PrimaryButton, staggerStyle } from './form-parts'
 import { useFormState } from './use-form-state'
@@ -23,6 +23,19 @@ export function LoginForm({ active, onSwitch, className }: { active: boolean; on
   const form = useFormState(FIELDS, validate, () => { setError(null); setStatus(null) })
   const s = (i: number) => staggerStyle(i, 1)
   const email = form.field('email')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const oauthStatus = params.get('oauth')
+    if (oauthStatus === 'success') {
+      setStatus('Successfully signed in with Google! Your dashboard will be available after it is built.')
+      authApi.me().catch(() => null)
+    } else if (oauthStatus === 'error') {
+      const message = params.get('message')
+      setError(message ? decodeURIComponent(message) : 'Google authentication was not completed.')
+    }
+  }, [])
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
