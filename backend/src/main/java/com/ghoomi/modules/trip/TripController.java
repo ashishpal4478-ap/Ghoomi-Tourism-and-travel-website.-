@@ -135,5 +135,50 @@ public class TripController {
         tripService.deleteTrip(id, user);
         return ResponseEntity.ok(ApiResponse.success("Trip deleted successfully."));
     }
+
+    /**
+     * POST /api/v1/trips/{tripId}/days/{dayId}/items
+     * Adds an itinerary item (activity, restaurant/food, attraction) to a specific day.
+     */
+    @PostMapping("/{tripId}/days/{dayId}/items")
+    public ResponseEntity<ApiResponse<ItineraryItemResponse>> addItemToDay(
+            @PathVariable String tripId,
+            @PathVariable String dayId,
+            @Valid @RequestBody AddItineraryItemRequest request,
+            Authentication authentication) {
+        User user = authService.getAuthenticatedUser(authentication);
+        ItineraryItemResponse response = tripService.addItemToDay(tripId, dayId, request, user);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.ok("Itinerary item added successfully.", response));
+    }
+
+    /**
+     * GET /api/v1/trips/{tripId}/days/{dayId}/items
+     * Lists all itinerary items scheduled for a specific day.
+     */
+    @GetMapping("/{tripId}/days/{dayId}/items")
+    public ResponseEntity<ApiResponse<List<ItineraryItemResponse>>> getDayItems(
+            @PathVariable String tripId,
+            @PathVariable String dayId,
+            Authentication authentication) {
+        User user = authService.getAuthenticatedUser(authentication);
+        List<ItineraryItemResponse> items = tripService.getDayItems(tripId, dayId, user);
+        return ResponseEntity.ok(ApiResponse.ok("Itinerary items retrieved successfully.", items));
+    }
+
+    /**
+     * DELETE /api/v1/trips/{tripId}/days/{dayId}/items/{itemId}
+     * Deletes an itinerary item from a specific day.
+     */
+    @DeleteMapping("/{tripId}/days/{dayId}/items/{itemId}")
+    public ResponseEntity<ApiResponse<Void>> deleteItem(
+            @PathVariable String tripId,
+            @PathVariable String dayId,
+            @PathVariable String itemId,
+            Authentication authentication) {
+        User user = authService.getAuthenticatedUser(authentication);
+        tripService.deleteItem(tripId, dayId, itemId, user);
+        return ResponseEntity.ok(ApiResponse.success("Itinerary item deleted successfully."));
+    }
 }
 

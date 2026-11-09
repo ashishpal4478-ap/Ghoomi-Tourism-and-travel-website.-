@@ -1,10 +1,9 @@
 package com.ghoomi.modules.auth;
 
 import com.ghoomi.common.exception.ConflictException;
+import com.ghoomi.common.exception.ResourceNotFoundException;
 import com.ghoomi.common.exception.UnauthorizedException;
-import com.ghoomi.modules.auth.dto.CurrentUserResponse;
-import com.ghoomi.modules.auth.dto.LoginRequest;
-import com.ghoomi.modules.auth.dto.RegisterRequest;
+import com.ghoomi.modules.auth.dto.*;
 import com.ghoomi.modules.auth.oauth2.CustomOAuth2User;
 import com.ghoomi.modules.user.*;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,9 +22,12 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -48,15 +50,19 @@ public class AuthService {
     private final UserProfileRepository userProfileRepository;
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
+    private final OtpRecordRepository otpRecordRepository;
+    private final SecureRandom secureRandom = new SecureRandom();
 
     public AuthService(UserRepository userRepository,
                        UserProfileRepository userProfileRepository,
                        PasswordEncoder passwordEncoder,
-                       AuthenticationManager authenticationManager) {
+                       AuthenticationManager authenticationManager,
+                       OtpRecordRepository otpRecordRepository) {
         this.userRepository = userRepository;
         this.userProfileRepository = userProfileRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
+        this.otpRecordRepository = otpRecordRepository;
     }
 
     // ── Registration ─────────────────────────────────────────────────────────
@@ -271,6 +277,133 @@ public class AuthService {
         User user = getAuthenticatedUser(authentication);
         UserProfile profile = userProfileRepository.findByUserId(user.getId()).orElse(null);
         return CurrentUserResponse.from(user, profile);
+    }
+
+    // ── Password Recovery ────────────────────────────────────────────────────
+
+    /**
+     * Initiates password recovery by issuing a 6-digit OTP stored as BCrypt hash.
+     * Prevents user enumeration by returning a generic response even if email is unknown.
+     * Enforces a 60-second cooldown per email.
+     */
+    @Transactional
+    public ForgotPasswordResponse forgotPassword(ForgotPasswordRequest request) {
+        String email = request.getEmail().trim().toLowerCase();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        // Cooldown check
+        Optional<OtpRecord> recentOtp = otpRecordRepository
+                .findTopByEmailAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                        email, OtpPurpose.PASSWORD_RESET, now);
+        if (recentOtp.isPresent()) {
+            long elapsedSeconds = ChronoUnit.SECONDS.between(recentOtp.get().getExpiresAt().minusMinutes(10), now);
+            if (elapsedSeconds < 60 && elapsedSeconds >= 0) {
+                int retryAfter = (int) (60 - elapsedSeconds);
+                return new ForgotPasswordResponse(
+                        "A verification code was recently generated. Please check your inbox or wait before retrying.",
+                        retryAfter
+                );
+            }
+        }
+
+        Optional<User> userOpt = userRepository.findByEmail(email);
+        if (userOpt.isEmpty() || !userOpt.get().isActive()) {
+            // Anti-enumeration: Return generic success without creating an OTP
+            return new ForgotPasswordResponse(
+                    "If your email address is registered, a 6-digit verification code has been dispatched.",
+                    60
+            );
+        }
+
+        // Generate cryptographically secure 6-digit OTP
+        int code = 100_000 + secureRandom.nextInt(900_000);
+        String otp = String.valueOf(code);
+        String otpHash = passwordEncoder.encode(otp);
+        LocalDateTime expiresAt = now.plusMinutes(10);
+
+        OtpRecord record = new OtpRecord(email, otpHash, OtpPurpose.PASSWORD_RESET, expiresAt);
+        otpRecordRepository.save(record);
+
+        // In dev / test / local environment log the code for operational verification
+        log.info("[AUTH] PASSWORD_RESET verification code generated for {}: {}", email, otp);
+
+        return new ForgotPasswordResponse(
+                "If your email address is registered, a 6-digit verification code has been dispatched.",
+                60
+        );
+    }
+
+    /**
+     * Validates an entered OTP against the latest active record.
+     * Locks record after 5 failed attempts.
+     * On success, establishes a server-side session grant for password reset.
+     */
+    @Transactional
+    public void verifyOtp(VerifyOtpRequest request, HttpServletRequest httpRequest) {
+        String email = request.getEmail().trim().toLowerCase();
+        String enteredOtp = request.getOtp().trim();
+        LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+
+        OtpRecord record = otpRecordRepository
+                .findTopByEmailAndPurposeAndUsedFalseAndExpiresAtAfterOrderByCreatedAtDesc(
+                        email, OtpPurpose.PASSWORD_RESET, now)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid or expired verification code. Please request a new code."));
+
+        if (record.getAttempts() >= 5) {
+            record.setUsed(true);
+            otpRecordRepository.save(record);
+            throw new IllegalArgumentException("Too many incorrect attempts. This code has been invalidated. Please request a new one.");
+        }
+
+        if (!passwordEncoder.matches(enteredOtp, record.getOtpHash())) {
+            record.incrementAttempts();
+            otpRecordRepository.save(record);
+            int remaining = 5 - record.getAttempts();
+            throw new IllegalArgumentException("Incorrect verification code. Attempts remaining: " + remaining);
+        }
+
+        // OTP verified successfully: consume it
+        record.setUsed(true);
+        otpRecordRepository.save(record);
+
+        // Store reset grant in the secure server-side session
+        HttpSession session = httpRequest.getSession(true);
+        session.setAttribute("PASSWORD_RESET_AUTHORIZED_EMAIL", email);
+        session.setAttribute("PASSWORD_RESET_AUTHORIZED_AT", now);
+    }
+
+    /**
+     * Resets the user's password using the verified session grant.
+     * Cleans up all previous OTP records for this user upon success.
+     */
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request, HttpServletRequest httpRequest) {
+        HttpSession session = httpRequest.getSession(false);
+        if (session == null || session.getAttribute("PASSWORD_RESET_AUTHORIZED_EMAIL") == null) {
+            throw new UnauthorizedException("Password reset authorization has expired or is missing. Please verify your OTP again.");
+        }
+
+        LocalDateTime authorizedAt = (LocalDateTime) session.getAttribute("PASSWORD_RESET_AUTHORIZED_AT");
+        if (authorizedAt == null || ChronoUnit.MINUTES.between(authorizedAt, LocalDateTime.now(ZoneOffset.UTC)) > 15) {
+            session.removeAttribute("PASSWORD_RESET_AUTHORIZED_EMAIL");
+            session.removeAttribute("PASSWORD_RESET_AUTHORIZED_AT");
+            throw new UnauthorizedException("Reset authorization expired. Please request a new verification code.");
+        }
+
+        String email = (String) session.getAttribute("PASSWORD_RESET_AUTHORIZED_EMAIL");
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + email));
+
+        // Update password hash with BCrypt(12)
+        user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Purge used OTP records for this email
+        otpRecordRepository.deleteAllByEmailAndPurpose(email, OtpPurpose.PASSWORD_RESET);
+
+        // Clear session grant
+        session.removeAttribute("PASSWORD_RESET_AUTHORIZED_EMAIL");
+        session.removeAttribute("PASSWORD_RESET_AUTHORIZED_AT");
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

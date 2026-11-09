@@ -101,6 +101,11 @@ public class SecurityConfig {
                     "/oauth2/**",
                     "/login/oauth2/**"
                 ).permitAll()
+                // Destination and catalog browsing — public read-only
+                .requestMatchers(HttpMethod.GET,
+                    "/api/v1/destinations/**",
+                    "/api/v1/places/**"
+                ).permitAll()
                 // Auth endpoints — registration, login, password recovery
                 .requestMatchers(HttpMethod.POST,
                     "/api/v1/auth/register",

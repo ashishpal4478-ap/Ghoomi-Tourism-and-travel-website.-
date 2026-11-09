@@ -114,7 +114,7 @@ An agent should fill proof and check only after actual verification. These gates
 - [ ] REL-05: Budget calculation accurate.
 - [ ] REL-06: Transportation comparison appropriate to verified source/mode.
 - [ ] REL-07: Accommodation discovery works.
-- [ ] REL-08: Food/restaurants/activities accessible.
+- [x] REL-08: Food/restaurants/activities accessible.
 - [x] REL-09: Trip modifications persist.
 - [ ] REL-10: Unified trip dashboard shows correct saved status/values.
 - [ ] REL-11: Supported booking integrations function as actually claimed; unsupported categories don't promise booking.
@@ -245,6 +245,42 @@ See `memory.md` ADR-001 to ADR-009. None of the proposed architecture/design cho
     - `GhoomiApplicationTests`: passed.
   - `npm run build` (frontend): Compiled successfully in 5.6s, 8/8 static routes generated, exit code 0.
 - **Next authorized slice:** `IMP-04` (Destination/place catalog, filters, itinerary add).
+
+### 2026-11-10 — Password Recovery Lifecycle & Destination/Food/Activity Catalog (IMP-04)
+- **Branch:** `integration/rehan-backend`
+- **Current Objective:** Implement complete secure password recovery lifecycle (`/forgot-password`, `/verify-otp`, `/reset-password`) using existing `OtpRecord` entity, and implement IMP-04 (Destination, Place, Food & Activity Catalog, Public search/filtering, and Itinerary item management).
+- **Completed:**
+  - [x] Password Recovery Flow:
+    - DTOs: `ForgotPasswordRequest`, `ForgotPasswordResponse`, `VerifyOtpRequest`, `ResetPasswordRequest`.
+    - `AuthService`: BCrypt OTP generation with 10-min expiry, 60s cooldown, attempt tracking (5 max), server-side session authorization grant, password update.
+    - `AuthController`: real endpoints `/password/forgot`, `/password/verify-otp`, `/password/reset`.
+  - [x] Destination, Food & Activity Module (IMP-04):
+    - `PlaceCategory.java`: `ATTRACTION`, `RESTAURANT`, `ACTIVITY`, `OTHER`.
+    - `Destination.java` & `DestinationRepository.java`: strictly mapped to `destinations` table, slug and name queries.
+    - `Place.java` & `PlaceRepository.java`: strictly mapped to `places` table, category and text search queries.
+    - `DestinationService.java`: search, list, filter by category and query.
+    - `DestinationController.java`: public REST endpoints `/api/v1/destinations`, `/api/v1/destinations/{slug}`, `/api/v1/destinations/{id}/places`, `/api/v1/places`, `/api/v1/places/{id}`.
+    - `SecurityConfig.java`: updated with public read-only access for `GET /api/v1/destinations/**` and `GET /api/v1/places/**`.
+  - [x] Itinerary Item Integration:
+    - `ItineraryItem.java` & `ItineraryItemRepository.java`: mapped to `itinerary_items` table.
+    - `TripService.java` & `TripController.java`: `POST /api/v1/trips/{tripId}/days/{dayId}/items`, `GET .../items`, `DELETE .../items/{itemId}` with strict tenant ownership validation.
+  - [x] Unit/Integration Tests Added:
+    - `DestinationControllerTest.java`: 7 integration tests covering public listing, search query filtering, slug lookup, place categories (RESTAURANT, ATTRACTION), place details, 404 handling.
+    - `AuthControllerTest.java`: password recovery lifecycle test (forgot -> OTP hash check -> verify -> reset -> login with new password).
+    - `TripControllerTest.java`: itinerary item addition, day listing, cross-user tenant isolation, item deletion.
+- **Verification:**
+  - `mvn test -DDB_PASSWORD="..."` -> **BUILD SUCCESS** in 25.194s.
+    - **Tests run: 25, Failures: 0, Errors: 0, Skipped: 0**.
+    - `TripControllerTest` (8 tests): unauthenticated guards, 3-day scaffolding, tenant isolation, patch/update persistence, optimistic locking (409), invalid dates (400), delete trip, itinerary items CRUD with tenant isolation.
+    - `DestinationControllerTest` (7 tests): public listing, search query filtering, slug lookup, place categories (RESTAURANT, ATTRACTION), place details, 404 handling.
+    - `AuthControllerTest` (4 tests): registration, login, session auth, password recovery lifecycle.
+    - `CustomOAuth2UserServiceTest` (3 tests): OAuth user extraction and persistence.
+    - `HealthControllerTest` (2 tests): basic and deep DB health check.
+    - `GhoomiApplicationTests` (1 test): Spring Boot context load.
+  - `npm run build` (Next.js 16.4.3 --webpack) -> **BUILD SUCCESS** in 6.1s, TypeScript in 4.6s, 8/8 static routes generated (`/`, `/_not-found`, `/forgot-password`, `/login`, `/reset-password`, `/signup`, `/verify-otp`), exit code 0.
+- **Known Limitations & Next Actions:**
+  - **Email Delivery:** OTP is currently logged to console in dev mode (`AuthService.forgotPassword()`). Real SMTP/email provider (`spring-boot-starter-mail` or SendGrid/SES) is NOT yet configured; production email delivery remains a pending operational requirement before public release.
+- **Next authorized slice:** Frontend integration of Destination Catalog / Trip Planning UI with live backend endpoints.
 
 ### Copy/paste entry for future sessions
 

@@ -1,9 +1,7 @@
 package com.ghoomi.modules.auth;
 
 import com.ghoomi.common.response.ApiResponse;
-import com.ghoomi.modules.auth.dto.CurrentUserResponse;
-import com.ghoomi.modules.auth.dto.LoginRequest;
-import com.ghoomi.modules.auth.dto.RegisterRequest;
+import com.ghoomi.modules.auth.dto.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -98,28 +96,30 @@ public class AuthController {
     // ── POST /api/v1/auth/password/forgot ─────────────────────────────────────
 
     @PostMapping("/password/forgot")
-    public ResponseEntity<ApiResponse<Void>> forgotPassword() {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiResponse.error(
-                        "Password recovery via email is not yet configured. Please contact support."));
+    public ResponseEntity<ApiResponse<ForgotPasswordResponse>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request) {
+        ForgotPasswordResponse response = authService.forgotPassword(request);
+        return ResponseEntity.ok(ApiResponse.ok(response.getMessage(), response));
     }
 
     // ── POST /api/v1/auth/password/verify-otp ────────────────────────────────
 
     @PostMapping("/password/verify-otp")
-    public ResponseEntity<ApiResponse<Void>> verifyOtp() {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiResponse.error(
-                        "Password recovery via OTP is not yet configured. Please contact support."));
+    public ResponseEntity<ApiResponse<Void>> verifyOtp(
+            @Valid @RequestBody VerifyOtpRequest request,
+            HttpServletRequest httpRequest) {
+        authService.verifyOtp(request, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success("OTP verified successfully."));
     }
 
     // ── POST /api/v1/auth/password/reset ─────────────────────────────────────
 
     @PostMapping("/password/reset")
-    public ResponseEntity<ApiResponse<Void>> resetPassword() {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .body(ApiResponse.error(
-                        "Password reset is not yet configured. Please contact support."));
+    public ResponseEntity<ApiResponse<Void>> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request,
+            HttpServletRequest httpRequest) {
+        authService.resetPassword(request, httpRequest);
+        return ResponseEntity.ok(ApiResponse.success("Password reset successfully. Please log in with your new password."));
     }
 }
 

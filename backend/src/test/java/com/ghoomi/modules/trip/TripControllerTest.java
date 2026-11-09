@@ -50,6 +50,9 @@ class TripControllerTest {
     private ItineraryDayRepository itineraryDayRepository;
 
     @Autowired
+    private ItineraryItemRepository itineraryItemRepository;
+
+    @Autowired
     private PlatformTransactionManager transactionManager;
 
     private static final String USER_A_EMAIL = "trip_user_a@example.com";
@@ -68,20 +71,20 @@ class TripControllerTest {
 
     private void cleanTestData() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            userRepository.findByEmail(USER_A_EMAIL).ifPresent(user -> {
-                tripRepository.findAllByOwnerIdOrderByUpdatedAtDesc(user.getId()).forEach(t -> {
-                    itineraryDayRepository.deleteAllByTripId(t.getId());
-                    tripRepository.delete(t);
+            for (String email : java.util.List.of(USER_A_EMAIL, USER_B_EMAIL)) {
+                userRepository.findByEmail(email).ifPresent(user -> {
+                    java.util.List<Trip> trips = tripRepository.findAllByOwnerIdOrderByUpdatedAtDesc(user.getId());
+                    for (Trip t : trips) {
+                        java.util.List<ItineraryDay> days = itineraryDayRepository.findAllByTripIdOrderByDayIndexAsc(t.getId());
+                        for (ItineraryDay d : days) {
+                            itineraryItemRepository.deleteAllByItineraryDayId(d.getId());
+                        }
+                        itineraryDayRepository.deleteAll(days);
+                        tripRepository.delete(t);
+                    }
+                    userRepository.delete(user);
                 });
-                userRepository.delete(user);
-            });
-            userRepository.findByEmail(USER_B_EMAIL).ifPresent(user -> {
-                tripRepository.findAllByOwnerIdOrderByUpdatedAtDesc(user.getId()).forEach(t -> {
-                    itineraryDayRepository.deleteAllByTripId(t.getId());
-                    tripRepository.delete(t);
-                });
-                userRepository.delete(user);
-            });
+            }
         });
     }
 
@@ -368,5 +371,81 @@ class TripControllerTest {
         mockMvc.perform(get("/api/v1/trips/" + tripId)
                         .session(sessionA))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void addAndManageItineraryItems_succeedsAndIsTenantIsolated() throws Exception {
+        MockHttpSession sessionA = registerAndLogin("Alice", USER_A_EMAIL);
+        MockHttpSession sessionB = registerAndLogin("Bob", USER_B_EMAIL);
+
+        CreateTripRequest create = new CreateTripRequest(
+                "Goa Vacation", "Mumbai", "Goa",
+                LocalDate.now().plusDays(15), LocalDate.now().plusDays(17)
+        );
+
+        MvcResult createResult = mockMvc.perform(post("/api/v1/trips")
+                        .session(sessionA)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(create)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        var tripNode = objectMapper.readTree(createResult.getResponse().getContentAsString()).path("data");
+        String tripId = tripNode.path("id").asText();
+        String dayId = tripNode.path("days").get(0).path("id").asText();
+
+        // 1. User A adds an itinerary item (e.g. Scuba Diving activity)
+        com.ghoomi.modules.trip.dto.AddItineraryItemRequest addItem =
+                new com.ghoomi.modules.trip.dto.AddItineraryItemRequest("Scuba Diving at Grand Island", "ACTIVITY");
+        addItem.setEstimateMinor(250000L); // 2500.00 INR
+        addItem.setCurrency("INR");
+
+        MvcResult itemResult = mockMvc.perform(post("/api/v1/trips/" + tripId + "/days/" + dayId + "/items")
+                        .session(sessionA)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(addItem)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.title").value("Scuba Diving at Grand Island"))
+                .andExpect(jsonPath("$.data.category").value("ACTIVITY"))
+                .andExpect(jsonPath("$.data.itemOrder").value(1))
+                .andReturn();
+
+        String itemId = objectMapper.readTree(itemResult.getResponse().getContentAsString())
+                .path("data").path("id").asText();
+
+        // 2. User A gets day items
+        mockMvc.perform(get("/api/v1/trips/" + tripId + "/days/" + dayId + "/items")
+                        .session(sessionA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(1)))
+                .andExpect(jsonPath("$.data[0].id").value(itemId));
+
+        // 3. User B attempts to add item to User A's trip day -> must be rejected (404/Not Found or accessible)
+        mockMvc.perform(post("/api/v1/trips/" + tripId + "/days/" + dayId + "/items")
+                        .session(sessionB)
+                        .with(csrf())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(addItem)))
+                .andExpect(status().isNotFound());
+
+        // 4. User B attempts to delete User A's itinerary item -> must be rejected (404)
+        mockMvc.perform(delete("/api/v1/trips/" + tripId + "/days/" + dayId + "/items/" + itemId)
+                        .session(sessionB)
+                        .with(csrf()))
+                .andExpect(status().isNotFound());
+
+        // 5. User A deletes the item
+        mockMvc.perform(delete("/api/v1/trips/" + tripId + "/days/" + dayId + "/items/" + itemId)
+                        .session(sessionA)
+                        .with(csrf()))
+                .andExpect(status().isOk());
+
+        // 6. Verify item list is empty
+        mockMvc.perform(get("/api/v1/trips/" + tripId + "/days/" + dayId + "/items")
+                        .session(sessionA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data", hasSize(0)));
     }
 }

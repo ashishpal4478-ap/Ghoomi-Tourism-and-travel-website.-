@@ -2,6 +2,8 @@ package com.ghoomi.modules.trip;
 
 import com.ghoomi.common.exception.ConflictException;
 import com.ghoomi.common.exception.ResourceNotFoundException;
+import com.ghoomi.modules.destination.Place;
+import com.ghoomi.modules.destination.PlaceRepository;
 import com.ghoomi.modules.trip.dto.*;
 import com.ghoomi.modules.user.User;
 import org.springframework.stereotype.Service;
@@ -18,10 +20,17 @@ public class TripService {
 
     private final TripRepository tripRepository;
     private final ItineraryDayRepository itineraryDayRepository;
+    private final ItineraryItemRepository itineraryItemRepository;
+    private final PlaceRepository placeRepository;
 
-    public TripService(TripRepository tripRepository, ItineraryDayRepository itineraryDayRepository) {
+    public TripService(TripRepository tripRepository,
+                       ItineraryDayRepository itineraryDayRepository,
+                       ItineraryItemRepository itineraryItemRepository,
+                       PlaceRepository placeRepository) {
         this.tripRepository = tripRepository;
         this.itineraryDayRepository = itineraryDayRepository;
+        this.itineraryItemRepository = itineraryItemRepository;
+        this.placeRepository = placeRepository;
     }
 
     /**
@@ -162,6 +171,10 @@ public class TripService {
 
         List<ItineraryDay> days;
         if (datesChanged) {
+            List<ItineraryDay> existingDays = itineraryDayRepository.findAllByTripIdOrderByDayIndexAsc(tripId);
+            for (ItineraryDay d : existingDays) {
+                itineraryItemRepository.deleteAllByItineraryDayId(d.getId());
+            }
             itineraryDayRepository.deleteAllByTripId(tripId);
             itineraryDayRepository.flush();
             days = createDayScaffolding(savedTrip, newStart, newEnd);
@@ -204,8 +217,85 @@ public class TripService {
      */
     public void deleteTrip(String tripId, User user) {
         Trip trip = findUserTripOrThrow(tripId, user.getId());
-        itineraryDayRepository.deleteAllByTripId(tripId);
+        List<ItineraryDay> existingDays = itineraryDayRepository.findAllByTripIdOrderByDayIndexAsc(tripId);
+        for (ItineraryDay d : existingDays) {
+            itineraryItemRepository.deleteAllByItineraryDayId(d.getId());
+        }
+        itineraryDayRepository.deleteAll(existingDays);
         tripRepository.delete(trip);
+    }
+
+    /**
+     * Adds an itinerary item (activity, food/restaurant, attraction) to a specific day of a user's trip.
+     */
+    public ItineraryItemResponse addItemToDay(String tripId, String dayId, AddItineraryItemRequest request, User user) {
+        findUserTripOrThrow(tripId, user.getId());
+
+        ItineraryDay day = itineraryDayRepository.findById(dayId)
+                .filter(d -> d.getTrip().getId().equals(tripId))
+                .orElseThrow(() -> new ResourceNotFoundException("Itinerary day not found in trip: " + dayId));
+
+        Place place = null;
+        if (request.getPlaceId() != null && !request.getPlaceId().isBlank()) {
+            place = placeRepository.findById(request.getPlaceId()).orElse(null);
+        }
+
+        int nextOrder = itineraryItemRepository.findTopByItineraryDayIdOrderByItemOrderDesc(dayId)
+                .map(i -> i.getItemOrder() + 1)
+                .orElse(1);
+
+        String category = request.getCategory() != null && !request.getCategory().isBlank()
+                ? request.getCategory()
+                : (place != null ? place.getCategory().name() : "ACTIVITY");
+
+        String title = request.getTitle() != null && !request.getTitle().isBlank()
+                ? request.getTitle()
+                : (place != null ? place.getName() : "Planned Stop");
+
+        ItineraryItem item = new ItineraryItem(day, place, nextOrder, category, title);
+        item.setPlannedStart(request.getPlannedStart());
+        item.setPlannedEnd(request.getPlannedEnd());
+        item.setNotes(request.getNotes());
+        item.setEstimateMinor(request.getEstimateMinor());
+        if (request.getCurrency() != null && !request.getCurrency().isBlank()) {
+            item.setCurrency(request.getCurrency());
+        }
+
+        ItineraryItem saved = itineraryItemRepository.save(item);
+        return ItineraryItemResponse.from(saved);
+    }
+
+    /**
+     * Lists all itinerary items for a specific day of a user's trip.
+     */
+    @Transactional(readOnly = true)
+    public List<ItineraryItemResponse> getDayItems(String tripId, String dayId, User user) {
+        findUserTripOrThrow(tripId, user.getId());
+
+        itineraryDayRepository.findById(dayId)
+                .filter(d -> d.getTrip().getId().equals(tripId))
+                .orElseThrow(() -> new ResourceNotFoundException("Itinerary day not found in trip: " + dayId));
+
+        return itineraryItemRepository.findAllByItineraryDayIdOrderByItemOrderAsc(dayId).stream()
+                .map(ItineraryItemResponse::from)
+                .toList();
+    }
+
+    /**
+     * Deletes an itinerary item from a day of a user's trip.
+     */
+    public void deleteItem(String tripId, String dayId, String itemId, User user) {
+        findUserTripOrThrow(tripId, user.getId());
+
+        itineraryDayRepository.findById(dayId)
+                .filter(d -> d.getTrip().getId().equals(tripId))
+                .orElseThrow(() -> new ResourceNotFoundException("Itinerary day not found in trip: " + dayId));
+
+        ItineraryItem item = itineraryItemRepository.findById(itemId)
+                .filter(i -> i.getItineraryDay().getId().equals(dayId))
+                .orElseThrow(() -> new ResourceNotFoundException("Itinerary item not found with id: " + itemId));
+
+        itineraryItemRepository.delete(item);
     }
 
     // ── Internal Helpers ──────────────────────────────────────────────────────
